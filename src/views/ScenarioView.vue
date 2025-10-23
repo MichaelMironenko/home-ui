@@ -1,0 +1,45 @@
+<script setup>
+import { computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import ScenarioEditor from '../components/ScenarioEditor.vue'
+
+const route = useRoute()
+const router = useRouter()
+
+const paramId = computed(() => route.params.id)
+const scenarioId = computed(() => {
+  const id = paramId.value
+  return typeof id === 'string' ? id : ''
+})
+
+const isCreateMode = computed(() => route.name === 'scenario-create')
+
+function handleSaved(id) {
+  if (!id) return
+  const current = scenarioId.value
+  if (isCreateMode.value || current !== id) {
+    router.replace({ name: 'scenario-edit', params: { id } })
+  }
+}
+
+function handleDeleted() {
+  router.replace({ name: 'scenarios-list' })
+}
+</script>
+
+<template>
+  <div class="scenario-page">
+    <ScenarioEditor
+      :key="isCreateMode ? 'new' : scenarioId"
+      :scenario-id="isCreateMode ? '' : scenarioId"
+      @saved="handleSaved"
+      @deleted="handleDeleted"
+    />
+  </div>
+</template>
+
+<style scoped>
+.scenario-page {
+  padding: 24px 0 40px;
+}
+</style>
