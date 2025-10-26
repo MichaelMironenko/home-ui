@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 const props = defineProps({
   modelValue: {
@@ -11,7 +11,8 @@ const props = defineProps({
     default: () => []
   },
   loading: { type: Boolean, default: false },
-  error: { type: [Object, String], default: null }
+  error: { type: [Object, String], default: null },
+  showSelectedOnly: { type: Boolean, default: false }
 })
 
 const emit = defineEmits(['update:modelValue'])
@@ -48,6 +49,59 @@ const allDevices = computed(() => {
 })
 
 const totalSelected = computed(() => selectedGroupIds.value.size + selectedDeviceIds.value.size)
+
+const showAllDevices = ref(false)
+
+watch(
+  () => props.showSelectedOnly,
+  (next) => {
+    if (!next) showAllDevices.value = false
+  }
+)
+
+watch(
+  () => totalSelected.value,
+  (count) => {
+    if (!count) showAllDevices.value = false
+  }
+)
+
+const collapseEnabled = computed(() => props.showSelectedOnly && totalSelected.value > 0)
+const collapseActive = computed(() => collapseEnabled.value && !showAllDevices.value)
+
+const renderSections = computed(() => {
+  if (!collapseActive.value) return props.sections || []
+  const filtered = (props.sections || []).map((section) => {
+    const groups = []
+    const devices = []
+
+    ;(section.groups || []).forEach((group) => {
+      const groupSelected = selectedGroupIds.value.has(group.id)
+      const memberList = Array.isArray(group.devices) ? group.devices : []
+      if (groupSelected) {
+        groups.push({ ...group, devices: memberList.slice() })
+        return
+      }
+      const selectedMembers = memberList.filter((device) => selectedDeviceIds.value.has(device.id))
+      if (selectedMembers.length) {
+        groups.push({ ...group, devices: selectedMembers })
+      }
+    })
+
+    ;(section.devices || []).forEach((device) => {
+      if (selectedDeviceIds.value.has(device.id)) devices.push(device)
+    })
+
+    if (!groups.length && !devices.length) return null
+    return {
+      ...section,
+      groups,
+      devices
+    }
+  }).filter(Boolean)
+
+  return filtered.length ? filtered : props.sections || []
+})
 
 const summary = computed(() => {
   const items = []
@@ -155,9 +209,16 @@ function toggleGroupExpanded(id) {
       Не удалось загрузить список устройств
     </div>
 
+    <div v-if="collapseEnabled && !loading" class="rooms__controls">
+      <span class="rooms__info" v-if="collapseActive">Показаны выбранные устройства.</span>
+      <button v-if="collapseActive" type="button" class="rooms__toggle" @click="showAllDevices = true">Показать все
+        устройства</button>
+      <button v-else-if="showAllDevices" type="button" class="rooms__toggle" @click="showAllDevices = false">Скрыть список</button>
+    </div>
+
     <div v-if="!loading" class="rooms">
       <div
-        v-for="section in sections"
+        v-for="section in renderSections"
         :key="section.id"
         class="room"
       >
@@ -242,7 +303,7 @@ function toggleGroupExpanded(id) {
         </div>
       </div>
 
-      <p v-if="!sections.length" class="muted">Нет подходящих устройств.</p>
+      <p v-if="!renderSections.length" class="muted">Нет подходящих устройств.</p>
     </div>
   </section>
 </template>
@@ -311,6 +372,33 @@ function toggleGroupExpanded(id) {
   border: 1px solid rgba(248, 113, 113, 0.4);
   color: #fecaca;
   font-size: 13px;
+}
+
+.rooms__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: #94a3b8;
+  margin: 4px 0;
+}
+
+.rooms__info {
+  margin-right: 4px;
+}
+
+.rooms__toggle {
+  padding: 0;
+  border: none;
+  background: none;
+  color: #93c5fd;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.rooms__toggle:hover {
+  text-decoration: underline;
 }
 .rooms {
   display: flex;

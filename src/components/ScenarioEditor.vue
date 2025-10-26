@@ -117,14 +117,67 @@ const catalog = reactive({
     rooms: []
 })
 
+const state = reactive({
+    id: '',
+    name: '',
+    target: { groups: [], devices: [] },
+    time: {
+        tz: 'Europe/Moscow',
+        lat: 55.751,
+        lon: 37.617,
+        start: { type: 'clock', time: '18:00' },
+        end: { type: 'clock', time: '23:00' },
+        days: [1, 2, 3, 4, 5, 6, 7]
+    },
+    brightness: {
+        enabled: true,
+        mode: 'manual',
+        manual: { from: 80, to: 20 },
+        sensor: {
+            sensorId: '',
+            sensorMin: 0,
+            sensorMax: 2000,
+            outputMin: 10,
+            outputMax: 100
+        }
+    },
+    color: {
+        enabled: false,
+        mode: 'temperature',
+        temperature: { fromK: 4000, toK: 2700 },
+        colors: {
+            from: { h: 35, s: 70, v: 90 },
+            to: { h: 210, s: 40, v: 60 }
+        }
+    },
+    presence: {
+        mode: 'always'
+    },
+    runtimeExtras: {}
+})
+
 const {
     roomsById,
     devicesById,
     sections: targetSections,
-    selectedDevices,
+    selectedDevices: selectionDevices,
     groupEntries,
     standaloneDevices
 } = useTargetDevices(catalog, state.target)
+
+const isCatalogScenario = computed(() => {
+    const extras = state.runtimeExtras || {}
+    return Boolean(
+        extras.catalogId ||
+        extras.catalogKey ||
+        extras.catalogScenarioId ||
+        extras.presetId ||
+        extras.templateId ||
+        extras.prebuilt === true ||
+        extras.origin === 'catalog' ||
+        extras.catalog
+    )
+})
 
 function computeLocalTimeProgress(timeConfig) {
     if (!timeConfig) return { active: false, progress: null }
@@ -175,151 +228,6 @@ function computeLocalTimeProgress(timeConfig) {
     return { active: true, progress: clamp((adjustedCurrent - startMin) / (adjustedEnd - startMin), 0, 1) }
 }
 
-const deviceSummary = (device) => {
-    const roomId = device?.room || ''
-    const roomName = roomId ? roomsById.value.get(roomId)?.name : ''
-    return {
-        id: device.id,
-        name: device.name || 'Без имени',
-        detail: roomName || device.roomName || '',
-        roomId,
-        supports: {
-            brightness: hasBrightnessCapability(device),
-            color: supportsColorCapability(device),
-            power: hasPowerCapability(device)
-        }
-    }
-}
-
-const groupEntries = computed(() => {
-    return catalog.groups
-        .map((group) => {
-            const memberIds = Array.isArray(group.devices) ? group.devices : []
-            const members = memberIds
-                .map((id) => devicesById.value.get(id))
-                .filter(isTargetDevice)
-                .map(deviceSummary)
-            if (!members.length) return null
-            const supports = members.reduce(
-                (acc, item) => ({
-                    brightness: acc.brightness || item.supports.brightness,
-                    color: acc.color || item.supports.color,
-                    power: acc.power || item.supports.power
-                }),
-                { brightness: false, color: false, power: false }
-            )
-            const memberRoomIds = Array.from(
-                new Set(
-                    members
-                        .map((item) => item.roomId)
-                        .filter((value) => typeof value === 'string' && value.length)
-                )
-            )
-            let roomId = ''
-            let roomName = ''
-            let mixedRooms = false
-            if (!memberRoomIds.length) {
-                roomId = ''
-                roomName = ''
-            } else if (memberRoomIds.length === 1) {
-                roomId = memberRoomIds[0]
-                roomName = roomsById.value.get(roomId)?.name || ''
-            } else {
-                mixedRooms = true
-                roomId = '__mixed__'
-                roomName = 'Разные комнаты'
-            }
-            return {
-                id: group.id,
-                name: group.name || 'Группа без имени',
-                devices: members,
-                supports,
-                roomId,
-                roomName,
-                mixedRooms
-            }
-        })
-        .filter(Boolean)
-})
-
-const groupedDeviceIds = computed(() => {
-    const set = new Set()
-    groupEntries.value.forEach((group) => {
-        group.devices.forEach((device) => set.add(device.id))
-    })
-    return set
-})
-
-const standaloneDevices = computed(() => {
-    return catalog.devices
-        .filter((device) => isTargetDevice(device) && !groupedDeviceIds.value.has(device.id))
-        .map(deviceSummary)
-})
-
-const targetSections = computed(() => {
-    const roomOrder = new Map()
-    catalog.rooms.forEach((room, index) => {
-        if (room?.id) roomOrder.set(room.id, index)
-    })
-
-    const ensureSection = (map, id, name, extras = {}) => {
-        const key = id || '__unknown__'
-        if (!map.has(key)) {
-            map.set(key, {
-                id: key,
-                name: name || (roomsById.value.get(id)?.name || 'Без комнаты'),
-                groups: [],
-                devices: [],
-                ...extras
-            })
-        }
-        const section = map.get(key)
-        if (name && !section.name) section.name = name
-        if (typeof extras.order === 'number') {
-            const nextOrder = extras.order
-            section.order =
-                typeof section.order === 'number' ? Math.min(section.order, nextOrder) : nextOrder
-        }
-        if (extras.mixed) section.mixed = true
-        return section
-    }
-
-    const sectionMap = new Map()
-
-    groupEntries.value.forEach((group) => {
-        const roomId = group.mixedRooms ? '__mixed__' : (group.roomId || '__unknown__')
-        const name = group.mixedRooms
-            ? 'Разные комнаты'
-            : (roomsById.value.get(group.roomId)?.name || group.roomName || 'Без комнаты')
-        const section = ensureSection(sectionMap, roomId, name, {
-            order: group.mixedRooms ? Number.MAX_SAFE_INTEGER - 1 : roomOrder.get(group.roomId) ?? Number.MAX_SAFE_INTEGER - 2,
-            mixed: group.mixedRooms
-        })
-        if (group.mixedRooms) section.mixed = true
-        section.groups.push(group)
-    })
-
-    standaloneDevices.value.forEach((device) => {
-        const roomId = device.roomId || '__unknown__'
-        const roomName = device.roomId ? roomsById.value.get(device.roomId)?.name : ''
-        const name = roomName || 'Без комнаты'
-        const section = ensureSection(sectionMap, roomId, name, {
-            order: roomOrder.get(device.roomId) ?? Number.MAX_SAFE_INTEGER - 2
-        })
-        section.devices.push(device)
-    })
-
-    const sections = Array.from(sectionMap.values()).filter((section) => section.groups.length || section.devices.length)
-
-    sections.sort((a, b) => {
-        const orderA = a.order ?? Number.MAX_SAFE_INTEGER
-        const orderB = b.order ?? Number.MAX_SAFE_INTEGER
-        if (orderA !== orderB) return orderA - orderB
-        return a.name.localeCompare(b.name, 'ru')
-    })
-
-    return sections
-})
 
 const sensorOptions = computed(() => {
     const options = []
@@ -342,53 +250,9 @@ const sensorOptions = computed(() => {
 
 const presenceChoices = Object.freeze([
     { value: 'always', label: 'Всегда' },
-    { value: 'onlyWhenHome', label: 'Только когда кто-то дома' },
-    { value: 'onlyWhenAway', label: 'Только когда никого нет дома' }
+    { value: 'onlyWhenHome', label: 'Когда кто-то дома' },
+    { value: 'onlyWhenAway', label: 'Когда никого нет дома' }
 ])
-const presenceHints = Object.freeze({
-    always: 'Сценарий запускается независимо от присутствия.',
-    onlyWhenHome: 'Выполнять только если в доме есть кто-то из разрешённых устройств.',
-    onlyWhenAway: 'Выполнять только если дома никого нет.'
-})
-
-const state = reactive({
-    id: '',
-    name: '',
-    target: { groups: [], devices: [] },
-    time: {
-        tz: 'Europe/Moscow',
-        lat: 55.751,
-        lon: 37.617,
-        start: { type: 'clock', time: '18:00' },
-        end: { type: 'clock', time: '23:00' },
-        days: [1, 2, 3, 4, 5, 6, 7]
-    },
-    brightness: {
-        enabled: true,
-        mode: 'manual',
-        manual: { from: 80, to: 20 },
-        sensor: {
-            sensorId: '',
-            sensorMin: 0,
-            sensorMax: 2000,
-            outputMin: 10,
-            outputMax: 100
-        }
-    },
-    color: {
-        enabled: false,
-        mode: 'temperature', // 'temperature' | 'colors'
-        temperature: { fromK: 4000, toK: 2700 },
-        colors: {
-            from: { h: 35, s: 70, v: 90 },
-            to: { h: 210, s: 40, v: 60 }
-        }
-    },
-    presence: {
-        mode: 'always'
-    },
-    runtimeExtras: {}
-})
 
 const ready = ref(false)
 const loadingScenario = ref(false)
@@ -408,19 +272,6 @@ const pauseInfo = ref(null)
 const statusInfo = ref(null)
 
 const fallbackId = ref(`scn_${Math.random().toString(36).slice(2, 8)}`)
-
-const selectionDevices = computed(() => {
-    const result = new Map()
-    state.target.devices.forEach((id) => {
-        const device = devicesById.value.get(id)
-        if (device) result.set(id, deviceSummary(device))
-    })
-    state.target.groups.forEach((groupId) => {
-        const group = groupEntries.value.find((item) => item.id === groupId)
-        group?.devices.forEach((device) => result.set(device.id, device))
-    })
-    return Array.from(result.values())
-})
 
 const brightnessSupport = computed(() => {
     if (!selectionDevices.value.length) return { available: false, partial: false, hasSelection: false }
@@ -785,10 +636,19 @@ const colorRuntime = computed(() => {
         }
         if (!colorHex) {
             if (hsv) colorHex = hsvToHex(hsv)
-                else if (catalogRgb.length) {
-                    colorHex = rgbToHex(catalogRgb[0])
+            else if (catalogRgb.length) {
+                colorHex = rgbToHex(catalogRgb[0])
                 if (source === 'none' || source === 'config') source = 'catalog'
             }
+        }
+    }
+
+    if (mode === 'temperature' && progress === null && temperature != null) {
+        const fromK = toNumber(state.color.temperature.fromK)
+        const toK = toNumber(state.color.temperature.toK)
+        if (Number.isFinite(fromK) && Number.isFinite(toK) && fromK !== toK) {
+            const ratio = (temperature - fromK) / (toK - fromK)
+            progress = clamp(ratio, 0, 1)
         }
     }
 
@@ -808,7 +668,8 @@ const colorRuntime = computed(() => {
         setTemperature(interpolated, progress != null ? 'calculated' : 'config')
     }
 
-    const active = runtimeActive || !!debugActive || localWindow.active
+    const hasLiveState = temperature != null || colorHex || hsv
+    const active = runtimeActive || !!debugActive || localWindow.active || hasLiveState
     if (!active) {
         progress = null
         if (mode === 'temperature') {
@@ -823,9 +684,9 @@ const colorRuntime = computed(() => {
             hsv = null
         } else {
             temperature = null
-    if (!colorHex && hsv) {
-        colorHex = hsvToHex(hsv)
-    }
+            if (!colorHex && hsv) {
+                colorHex = hsvToHex(hsv)
+            }
         }
     }
 
@@ -1142,8 +1003,9 @@ async function loadScenario(id) {
     }
 }
 
+
 function kelvinToRgb(kelvin) {
-    const temp = clamp(kelvin, 1000, 40000) / 100
+    const temp = clamp(kelvin, 1000, 8000) / 100
     let r, g, b
     if (temp <= 66) {
         r = 255
@@ -1581,7 +1443,7 @@ onMounted(async () => {
             <header class="status-block__header">
                 <h2>Статус сценария</h2>
                 <small>{{ formatTimestamp(statusInfo.ts) }}<span v-if="statusInfo.origin"> · {{ statusInfo.origin
-                        }}</span></small>
+                }}</span></small>
             </header>
             <p v-if="statusInfo.result">
                 <strong>{{ statusReasonText(statusInfo.result) }}</strong>
@@ -1600,8 +1462,10 @@ onMounted(async () => {
         </section>
 
         <section class="stack">
-            <ScenarioDevicesSection :model-value="state.target" :sections="targetSections"
-                :loading="catalogLoading" :error="catalogError" @update:model-value="handleTargetUpdate" />
+            <ScenarioDevicesSection :model-value="state.target" :sections="targetSections" :loading="catalogLoading"
+                :error="catalogError"
+                :show-selected-only="Boolean((state.id || props.scenarioId) && (state.target.groups.length || state.target.devices.length))"
+                @update:model-value="handleTargetUpdate" />
 
             <ScenarioMappingSection :model-value="state.brightness" :sensor-options="sensorOptions"
                 :support="brightnessSupport" :runtime="brightnessRuntime"
@@ -1621,10 +1485,7 @@ onMounted(async () => {
                 <div class="presence-block__options">
                     <label v-for="choice in presenceChoices" :key="choice.value" class="presence-option">
                         <input type="radio" name="presence-mode" :value="choice.value" v-model="state.presence.mode" />
-                        <span>
-                            <strong>{{ choice.label }}</strong>
-                            <small>{{ presenceHints[choice.value] }}</small>
-                        </span>
+                        <span class="presence-option__text">{{ choice.label }}</span>
                     </label>
                 </div>
             </section>
@@ -1835,14 +1696,14 @@ onMounted(async () => {
 
 .presence-block__options {
     display: flex;
-    flex-direction: column;
+    flex-wrap: wrap;
     gap: 10px;
 }
 
 .presence-option {
     display: flex;
-    gap: 12px;
-    align-items: flex-start;
+    align-items: center;
+    gap: 10px;
     padding: 12px 14px;
     border-radius: 12px;
     border: 1px solid rgba(59, 130, 246, 0.14);
@@ -1852,19 +1713,11 @@ onMounted(async () => {
 }
 
 .presence-option input {
-    margin-top: 4px;
+    margin: 0;
 }
 
-.presence-option strong {
-    display: block;
+.presence-option__text {
     font-size: 14px;
-    margin-bottom: 2px;
-}
-
-.presence-option small {
-    display: block;
-    font-size: 12px;
-    color: #94a3b8;
 }
 
 .actions {
@@ -1946,6 +1799,14 @@ onMounted(async () => {
 @media (max-width: 680px) {
     .editor {
         padding: 0 16px 32px;
+    }
+
+    .presence-block__options {
+        flex-direction: column;
+    }
+
+    .presence-option {
+        flex: 1 1 auto;
     }
 }
 </style>

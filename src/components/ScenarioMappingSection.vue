@@ -473,6 +473,8 @@ const currentMarker = computed(() => {
     background: transparent;
     -webkit-appearance: none;
     appearance: none;
+    /* Let page scroll vertically when gesture is vertical */
+    touch-action: pan-y;
 }
 
 .slider::-webkit-slider-thumb {

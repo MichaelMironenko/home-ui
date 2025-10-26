@@ -15,6 +15,9 @@
 <style scoped>
 .app-shell {
   min-height: 100vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
   background: #f5f6fa;
 }
 
