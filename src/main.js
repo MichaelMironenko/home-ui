@@ -7,7 +7,7 @@ import ScenariosListView from './views/ScenariosListView.vue'
 import ScenarioView from './views/ScenarioView.vue'
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     { path: '/', name: 'home', component: HomeView },
     { path: '/scenarios', name: 'scenarios-list', component: ScenariosListView },
@@ -17,5 +17,4 @@ const router = createRouter({
 })
 
 createApp(App).use(router).mount('#app')
-
 
