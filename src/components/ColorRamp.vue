@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
+import RangeIntervalSlider from './RangeIntervalSlider.vue'
 
 const props = defineProps({
     modelValue: {
@@ -191,114 +192,17 @@ const colorGradient = (from, to) => {
     return `linear-gradient(90deg, ${start}, ${end})`
 }
 
-const updateTemperature = (field, value) => {
-    const base = field === 'fromK' ? TEMPERATURE_DEFAULT_FROM : TEMPERATURE_DEFAULT_TO
-    const numericRaw = clamp(parseNumber(value) ?? base, TEMPERATURE_MIN, TEMPERATURE_MAX)
-    const numeric = clamp(snapToTemperatureStep(numericRaw), TEMPERATURE_MIN, TEMPERATURE_MAX)
-    updateValue({ temperature: { [field]: numeric } })
+const setTemperatureRange = (fromK, toK) => {
+    const fromSanitized = clamp(snapToTemperatureStep(fromK ?? TEMPERATURE_DEFAULT_FROM), TEMPERATURE_MIN, TEMPERATURE_MAX)
+    const toSanitized = clamp(snapToTemperatureStep(toK ?? TEMPERATURE_DEFAULT_TO), TEMPERATURE_MIN, TEMPERATURE_MAX)
+    updateValue({ temperature: { fromK: fromSanitized, toK: toSanitized } })
 }
 
-const temperatureTrack = ref(null)
-let activeDrag = null
-
-function applyTemperature(field, raw) {
-    const { fromK, toK } = temperatureRange.value
-    let target = clamp(raw, TEMPERATURE_MIN, TEMPERATURE_MAX)
-    const snapped = snapToTemperatureStep(target)
-
-    if (field === 'fromK') {
-        if (fromK <= toK) {
-            const maxAllowed = Math.max(TEMPERATURE_MIN, toK - TEMPERATURE_GAP)
-            target = snapped > maxAllowed ? maxAllowed : snapped
-        } else {
-            const minAllowed = Math.min(TEMPERATURE_MAX, toK + TEMPERATURE_GAP)
-            target = snapped < minAllowed ? minAllowed : snapped
-        }
-    } else {
-        if (fromK <= toK) {
-            const minAllowed = Math.min(TEMPERATURE_MAX, fromK + TEMPERATURE_GAP)
-            target = snapped < minAllowed ? minAllowed : snapped
-        } else {
-            const maxAllowed = Math.max(TEMPERATURE_MIN, fromK - TEMPERATURE_GAP)
-            target = snapped > maxAllowed ? maxAllowed : snapped
-        }
-    }
-
-    const constrained = clamp(target, TEMPERATURE_MIN, TEMPERATURE_MAX)
-    debugLog('[ColorRamp] applyTemperature', { field, raw, snapped, constrained, fromK, toK })
-    updateTemperature(field, constrained)
-}
-
-function startTemperatureDrag(field, event) {
-    // Не блокируем по умолчанию — даём странице возможность скроллиться
-    const track = temperatureTrack.value
-    if (!track) { debugLog('[ColorRamp] drag abort: track missing', { field }); return }
-    const rect = track.getBoundingClientRect()
-    if (!rect || rect.width === 0) { debugLog('[ColorRamp] drag abort: rect invalid', { field, rect }); return }
-
-    const pointerId = event.pointerId ?? 0
-    const startX = event.clientX
-    const startY = event.clientY
-    let dragging = false
-    let offsetRatio = 0
-
-    const currentValue = field === 'fromK' ? temperatureRange.value.fromK : temperatureRange.value.toK
-    const currentNormalized = (currentValue - TEMPERATURE_MIN) / (TEMPERATURE_MAX - TEMPERATURE_MIN)
-    const currentRatio = isTemperatureAscending.value ? currentNormalized : 1 - currentNormalized
-
-    const captureTarget = event.currentTarget
-
-    const cleanup = () => {
-        window.removeEventListener('pointermove', handleMove)
-        window.removeEventListener('pointerup', handleUp)
-        if (dragging && captureTarget?.releasePointerCapture) {
-            try { captureTarget.releasePointerCapture(pointerId) } catch {}
-        }
-        debugLog('[ColorRamp] drag end', { field, pointerId })
-        activeDrag = null
-        dragging = false
-    }
-
-    const handleMove = (e) => {
-        if (e.pointerId !== pointerId) return
-
-        if (!dragging) {
-            const dx = Math.abs(e.clientX - startX)
-            const dy = Math.abs(e.clientY - startY)
-            if (dx < 4 && dy < 4) return // dead zone
-            if (dy > dx) { cleanup(); return } // вертикальный жест — скроллим страницу
-
-            // Горизонтальный жест — старт drag
-            const pointerRatioAtStart = clamp((startX - rect.left) / rect.width, 0, 1)
-            offsetRatio = pointerRatioAtStart - currentRatio
-            if (captureTarget?.setPointerCapture) captureTarget.setPointerCapture(pointerId)
-            activeDrag = { pointerId, offsetRatio, rect }
-            dragging = true
-            debugLog('[ColorRamp] drag start', { field, pointerId, startX, startY, currentValue, currentRatio, offsetRatio })
-        }
-
-        const drag = activeDrag
-        if (!drag) return
-        const ratioRaw = clamp((e.clientX - drag.rect.left) / drag.rect.width, 0, 1)
-        const adjustedRatio = clamp(ratioRaw - (drag.offsetRatio ?? 0), 0, 1)
-        const next = isTemperatureAscending.value
-            ? TEMPERATURE_MIN + adjustedRatio * (TEMPERATURE_MAX - TEMPERATURE_MIN)
-            : TEMPERATURE_MAX - adjustedRatio * (TEMPERATURE_MAX - TEMPERATURE_MIN)
-        debugLog('[ColorRamp] drag move', { field, pointerId, clientX: e.clientX, ratioRaw, adjustedRatio, next })
-        applyTemperature(field, next)
-    }
-
-    const handleUp = (e) => { if (e.pointerId === pointerId) cleanup() }
-
-    window.addEventListener('pointermove', handleMove)
-    window.addEventListener('pointerup', handleUp)
-}
-
-function invertTemperature() {
-    const { fromK, toK } = temperatureRange.value
-    const nextFrom = clamp(snapToTemperatureStep(toK), TEMPERATURE_MIN, TEMPERATURE_MAX)
-    const nextTo = clamp(snapToTemperatureStep(fromK), TEMPERATURE_MIN, TEMPERATURE_MAX)
-    updateValue({ temperature: { fromK: nextFrom, toK: nextTo } })
+const handleTemperatureRangeChange = (rangeUpdate) => {
+    if (!rangeUpdate) return
+    const from = Number(rangeUpdate.from)
+    const to = Number(rangeUpdate.to)
+    setTemperatureRange(Number.isFinite(from) ? from : undefined, Number.isFinite(to) ? to : undefined)
 }
 
 const updateColorChannel = (scope, channel, value) => {
@@ -322,15 +226,21 @@ const temperatureRange = computed(() => {
     return { fromK, toK }
 })
 
+const temperatureSliderRange = computed(() => ({
+    from: temperatureRange.value.fromK,
+    to: temperatureRange.value.toK
+}))
+
 const isTemperatureAscending = computed(() => temperatureRange.value.fromK <= temperatureRange.value.toK)
 
-const temperatureGradientStyle = computed(() => {
+const temperatureGradientForward = computed(() => {
     const neutralPercent = temperaturePercentFor(TEMPERATURE_NEUTRAL)
-    if (isTemperatureAscending.value) {
-        return `linear-gradient(90deg, ${TEMPERATURE_GRADIENT_WARM} 0%, ${TEMPERATURE_GRADIENT_NEUTRAL} ${neutralPercent}%, ${TEMPERATURE_GRADIENT_COOL} 100%)`
-    }
-    const reversedNeutralPercent = 100 - neutralPercent
-    return `linear-gradient(90deg, ${TEMPERATURE_GRADIENT_COOL} 0%, ${TEMPERATURE_GRADIENT_NEUTRAL} ${reversedNeutralPercent}%, ${TEMPERATURE_GRADIENT_WARM} 100%)`
+    return `linear-gradient(90deg, ${TEMPERATURE_GRADIENT_WARM} 0%, ${TEMPERATURE_GRADIENT_NEUTRAL} ${neutralPercent}%, ${TEMPERATURE_GRADIENT_COOL} 100%)`
+})
+
+const temperatureGradientReverse = computed(() => {
+    const neutralPercent = 100 - temperaturePercentFor(TEMPERATURE_NEUTRAL)
+    return `linear-gradient(90deg, ${TEMPERATURE_GRADIENT_COOL} 0%, ${TEMPERATURE_GRADIENT_NEUTRAL} ${neutralPercent}%, ${TEMPERATURE_GRADIENT_WARM} 100%)`
 })
 
 const temperatureTicks = computed(() => {
@@ -338,66 +248,39 @@ const temperatureTicks = computed(() => {
     for (let value = TEMPERATURE_MIN; value <= TEMPERATURE_MAX; value += 1000) {
         ticks.push(value)
     }
-    return isTemperatureAscending.value ? ticks : ticks.reverse()
+    return ticks
 })
-
-const temperatureTickEndpoints = computed(() => ({
-    start: isTemperatureAscending.value ? TEMPERATURE_MIN : TEMPERATURE_MAX,
-    end: isTemperatureAscending.value ? TEMPERATURE_MAX : TEMPERATURE_MIN
-}))
-
-const temperatureDisplayPercent = (value) => {
-    const base = temperaturePercentFor(value)
-    return isTemperatureAscending.value ? base : 100 - base
-}
-
-const temperatureTickLeft = (value) => temperatureDisplayPercent(value)
-
-const temperatureTickClass = (value) => {
-    const { start, end } = temperatureTickEndpoints.value
-    return {
-        'temperature__tick--start': value === start,
-        'temperature__tick--end': value === end
-    }
-}
-
-const fromPercent = computed(
-    () => temperatureDisplayPercent(temperatureRange.value.fromK)
-)
-
-const toPercent = computed(
-    () => temperatureDisplayPercent(temperatureRange.value.toK)
-)
-
-const thumbStyle = (percent) => ({ left: `${clamp(percent, 0, 100)}%` })
 
 const temperatureSummary = computed(
     () => `Изменение температуры от ${temperatureRange.value.fromK}K до ${temperatureRange.value.toK}K`
 )
 
+const formatTemperatureValue = (value) => `${Math.round(value)}K`
+
 const temperatureMarker = computed(() => {
-  if (!props.runtime?.active) {
-    debugLog('[ColorRamp] temperatureMarker: runtime inactive', props.runtime)
-    return null
-  }
-  if (activeMode.value === 'colors') {
-    debugLog('[ColorRamp] temperatureMarker: mode colors, skip', props.runtime)
-    return null
-  }
-  const runtimeValue = parseNumber(props.runtime?.temperature)
-  if (!Number.isFinite(runtimeValue)) {
-    debugLog('[ColorRamp] temperatureMarker: runtime temperature not finite', props.runtime?.temperature)
-    return null
-  }
+    if (!props.runtime?.active) {
+        debugLog('[ColorRamp] temperatureMarker: runtime inactive', props.runtime)
+        return null
+    }
+    if (activeMode.value === 'colors') {
+        debugLog('[ColorRamp] temperatureMarker: mode colors, skip', props.runtime)
+        return null
+    }
+    const runtimeValue = parseNumber(props.runtime?.temperature)
+    if (!Number.isFinite(runtimeValue)) {
+        debugLog('[ColorRamp] temperatureMarker: runtime temperature not finite', props.runtime?.temperature)
+        return null
+    }
     const clampedValue = clamp(runtimeValue, TEMPERATURE_MIN, TEMPERATURE_MAX)
-    const percent = clamp(temperatureDisplayPercent(clampedValue), 0, 100)
-  const marker = {
-    value: Math.round(clampedValue),
-    percent,
-    source: props.runtime?.source || 'runtime'
-  }
-  debugLog('[ColorRamp] temperatureMarker: computed', marker)
-  return marker
+    const rounded = Math.round(clampedValue)
+    const marker = {
+        value: clampedValue,
+        label: `Сейчас ${rounded} K`,
+        hint: props.runtime?.source ? `Источник: ${props.runtime.source}` : '',
+        fromBackend: props.runtime?.source === 'backend'
+    }
+    debugLog('[ColorRamp] temperatureMarker: computed', marker)
+    return marker
 })
 
 const colorMarker = computed(() => {
@@ -426,21 +309,22 @@ const colorMarker = computed(() => {
         <header class="blk__header">
             <div>
                 <h2>Изменение цвета</h2>
-                <p class="blk__hint">
-                    Плавная смена температуры или цвета в течение окна сценария.
-                </p>
-                <p v-if="support.hasSelection && !support.available" class="blk__hint warn">Выбранные устройства не
-                    поддерживают изменение цвета.</p>
-                <p v-else-if="support.hasSelection && support.partial" class="blk__hint warn">
-                    Часть устройств без поддержки цвета — действие применится только к совместимым.
-                </p>
+                <template v-if="modelValue.enabled">
+                    <p class="blk__hint">
+                        Плавная смена температуры или цвета в течение окна сценария.
+                    </p>
+                    <p v-if="support.hasSelection && !support.available" class="blk__hint warn">Выбранные устройства не
+                        поддерживают изменение цвета.</p>
+                    <p v-else-if="support.hasSelection && support.partial" class="blk__hint warn">
+                        Часть устройств без поддержки цвета — действие применится только к совместимым.
+                    </p>
+                </template>
             </div>
             <button type="button" class="switch" role="switch" :aria-checked="modelValue.enabled"
                 @click="toggleEnabled(!modelValue.enabled)">
                 <span class="switch__track">
                     <span class="switch__thumb"></span>
                 </span>
-                <span class="switch__label">{{ modelValue.enabled ? 'Включено' : 'Выключено' }}</span>
             </button>
         </header>
 
@@ -457,39 +341,25 @@ const colorMarker = computed(() => {
             </div>
 
             <div v-if="activeMode !== 'colors'" class="temperature">
-                <p class="temperature__summary">{{ temperatureSummary }}</p>
-                <div class="temperature__control">
-                    <div class="temperature__track-wrapper">
-                        <div class="temperature__track" ref="temperatureTrack"
-                            :style="{ '--temperature-gradient': temperatureGradientStyle }">
-                            <div class="temperature__mask temperature__mask--left"
-                                :style="{ width: `${fromPercent}%` }"></div>
-                            <div class="temperature__mask temperature__mask--right"
-                                :style="{ width: `${100 - toPercent}%` }"></div>
-                            <button type="button" class="temperature__thumb temperature__thumb--from"
-                                :style="thumbStyle(fromPercent)"
-                                @pointerdown="startTemperatureDrag('fromK', $event)"></button>
-                            <button type="button" class="temperature__thumb temperature__thumb--to"
-                                :style="thumbStyle(toPercent)"
-                                @pointerdown="startTemperatureDrag('toK', $event)"></button>
-                        </div>
-                        <div v-if="temperatureMarker" class="temperature__tooltip"
-                            :style="{ left: `${temperatureMarker.percent}%` }">
-                            <span class="temperature__tooltip-label">Сейчас</span>
-                            <span class="temperature__tooltip-value">{{ temperatureMarker.value }} K</span>
-                        </div>
-                        <div class="temperature__ticks">
-                            <span v-for="tick in temperatureTicks" :key="tick"
-                                :class="['temperature__tick', temperatureTickClass(tick)]"
-                                :style="{ left: `${temperatureTickLeft(tick)}%` }">
-                                <span class="temperature__tick-mark"></span>
-                                <span class="temperature__tick-label">{{ tick }}K</span>
-                            </span>
-                        </div>
-                    </div>
-                    <button type="button" class="temperature__invert" @click="invertTemperature"
-                        title="Инвертировать диапазон">⇄</button>
-                </div>
+                <RangeIntervalSlider
+                    :model-value="temperatureSliderRange"
+                    :min="TEMPERATURE_MIN"
+                    :max="TEMPERATURE_MAX"
+                    :step="TEMPERATURE_STEP"
+                    :gap="TEMPERATURE_GAP"
+                    :gradient="temperatureGradientForward"
+                    :gradient-reverse="temperatureGradientReverse"
+                    :summary="temperatureSummary"
+                    start-label="Старт"
+                    end-label="Финиш"
+                    invert-label="Инвертировать"
+                    :ticks="temperatureTicks"
+                    :tick-formatter="formatTemperatureValue"
+                    :format-value="formatTemperatureValue"
+                    :marker="temperatureMarker"
+                    @update:modelValue="handleTemperatureRangeChange"
+                    @invert="handleTemperatureRangeChange"
+                />
             </div>
 
             <div v-else class="colors">
@@ -520,7 +390,6 @@ const colorMarker = computed(() => {
                 </div>
             </div>
         </div>
-        <p v-else class="muted">Блок отключён — цвет не изменяется.</p>
     </section>
 </template>
 
@@ -606,10 +475,6 @@ const colorMarker = computed(() => {
     background: #f8fafc;
 }
 
-.switch__label {
-    font-weight: 500;
-}
-
 .body {
     display: flex;
     flex-direction: column;
@@ -642,183 +507,6 @@ const colorMarker = computed(() => {
     display: flex;
     flex-direction: column;
     gap: 14px;
-}
-
-.temperature__summary {
-    margin: 0 0 8px;
-    font-size: 13px;
-    color: #dbeafe;
-}
-
-.temperature__control {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.temperature__track-wrapper {
-    flex: 1;
-    position: relative;
-}
-
-.temperature__track {
-    position: relative;
-    flex: 1;
-    height: 48px;
-    border-radius: 24px;
-    border: 1px solid rgba(96, 165, 250, 0.4);
-    overflow: visible;
-    background: var(--temperature-gradient, linear-gradient(90deg, #ffb56b 0%, #ffffff 70%, #6cb8ff 100%));
-    background-clip: padding-box;
-    touch-action: pan-y;
-}
-
-.temperature__mask {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    background: rgba(15, 23, 42, 0.65);
-    pointer-events: none;
-    z-index: 1;
-    border-radius: 0;
-}
-
-.temperature__mask--left {
-    left: 0;
-    border-top-left-radius: 24px;
-    border-bottom-left-radius: 24px;
-}
-
-.temperature__mask--right {
-    right: 0;
-    border-top-right-radius: 24px;
-    border-bottom-right-radius: 24px;
-}
-
-.temperature__thumb {
-    position: absolute;
-    top: 50%;
-    width: 16px;
-    height: 48px;
-    border-radius: 20%;
-    background: linear-gradient(135deg, rgba(37, 99, 235, 0.9), rgba(124, 58, 237, 0.85));
-    border: 2px solid rgba(125, 211, 252, 0.8);
-    transform: translate(-50%, -50%);
-    cursor: pointer;
-    box-shadow: 0 2px 6px rgba(13, 18, 33, 0.4);
-    border-color: rgba(59, 130, 246, 0.6);
-    z-index: 2;
-    touch-action: pan-y;
-}
-
-.temperature__thumb:focus-visible {
-    outline: none;
-    box-shadow: 0 0 0 3px rgba(191, 219, 254, 0.4);
-}
-
-.temperature__ticks {
-    position: relative;
-    height: 24px;
-    margin-top: 8px;
-}
-
-.temperature__tick {
-    position: absolute;
-    top: 0;
-    transform: translateX(-50%);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-    font-size: 10px;
-    color: #cbd5f5;
-    pointer-events: none;
-}
-
-.temperature__tick--start {
-    transform: translateX(0);
-    align-items: flex-start;
-}
-
-.temperature__tick--end {
-    transform: translateX(-100%);
-    align-items: flex-end;
-}
-
-.temperature__tick-mark {
-    width: 2px;
-    height: 8px;
-    border-radius: 1px;
-    background: rgba(148, 163, 184, 0.6);
-}
-
-.temperature__tick-label {
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-}
-
-.temperature__tooltip {
-    position: absolute;
-    top: calc(48px + 6px);
-    transform: translateX(-50%);
-    background: rgba(15, 23, 42, 0.9);
-    border-radius: 8px;
-    padding: 3px 6px;
-    display: inline-flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2px;
-    font-size: 10px;
-    color: #f8fafc;
-    pointer-events: none;
-    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.45);
-    white-space: nowrap;
-    z-index: 3;
-}
-
-.temperature__tooltip::after {
-    content: '';
-    position: absolute;
-    top: -4px;
-    left: 50%;
-    transform: translate(-50%, -100%);
-    width: 0;
-    height: 0;
-    border-left: 5px solid transparent;
-    border-right: 5px solid transparent;
-    border-bottom: 5px solid rgba(15, 23, 42, 0.9);
-}
-
-.temperature__tooltip-label {
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-}
-
-.temperature__tooltip-value {
-    font-variant-numeric: tabular-nums;
-}
-
-.temperature__invert {
-    width: 48px;
-    height: 48px;
-    border-radius: 14px;
-    border: 1px solid rgba(96, 165, 250, 0.4);
-    background: rgba(30, 41, 59, 0.6);
-    color: #bfdbfe;
-    font-size: 18px;
-    cursor: pointer;
-    transition: background 0.2s ease, border-color 0.2s ease;
-}
-
-.temperature__invert:hover {
-    background: rgba(59, 130, 246, 0.25);
-    border-color: rgba(147, 197, 253, 0.6);
-}
-
-.temperature__invert:focus-visible {
-    outline: none;
-    box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.3);
 }
 
 input[type='number'] {

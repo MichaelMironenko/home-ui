@@ -1,8 +1,7 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import DeviceCard from './DeviceCard.vue'
-
-
+import { trackYandexCall } from '../lib/requestMetrics'
 
 const props = defineProps({
     apiBase: { type: String, required: true },
@@ -21,6 +20,7 @@ onMounted(async () => {
     error.value = null
     try {
         const url = `${props.apiBase}${props.path}`
+        trackYandexCall()
         const res = await fetch(url, {
             headers: {
                 'Content-Type': 'application/json',

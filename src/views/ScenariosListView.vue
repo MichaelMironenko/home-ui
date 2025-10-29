@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { trackFunctionCall } from '../lib/requestMetrics'
 
 const router = useRouter()
 const cfg = ref({ base: '', keyHeader: 'x-api-key', keyValue: '' })
@@ -26,6 +27,7 @@ async function scenariosRequest(path, options = {}) {
   const headers = { ...(options.headers || {}) }
   if (options.body !== undefined && !headers['Content-Type']) headers['Content-Type'] = 'application/json'
   if (cfg.value.keyValue) headers[cfg.value.keyHeader || 'x-api-key'] = cfg.value.keyValue
+  trackFunctionCall()
   const res = await fetch(`${cfg.value.base}${path}`, {
     ...options,
     headers,

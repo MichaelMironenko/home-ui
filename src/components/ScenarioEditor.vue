@@ -17,6 +17,7 @@ import {
     interpolateValue
 } from '../utils/color.js'
 import { useTargetDevices } from '../composables/useTargetDevices'
+import { trackFunctionCall } from '../lib/requestMetrics'
 
 const props = defineProps({
     scenarioId: { type: String, default: '' }
@@ -265,6 +266,7 @@ const warnings = ref([])
 const validationErrors = ref([])
 const conflict = ref(null)
 const message = ref('')
+const loadError = ref(null)
 const scenarioVersion = ref(1)
 const lastSnapshot = ref('')
 const idTouched = ref(false)
@@ -803,6 +805,7 @@ function resetState() {
     idTouched.value = false
     pauseInfo.value = null
     statusInfo.value = null
+    loadError.value = null
 }
 
 function normalizeScenarioTimeBlock(block, fallbackTime = '18:00') {
@@ -844,6 +847,7 @@ async function scenariosFetch(path, options = {}) {
     if (options.body !== undefined) {
         headers['Content-Type'] = headers['Content-Type'] || 'application/json'
     }
+    trackFunctionCall()
     const res = await fetch(config.scenariosBase + path, {
         ...options,
         headers,
@@ -987,6 +991,7 @@ function applyScenarioPayload(payload, pause = null, status = null) {
 }
 
 async function loadScenario(id) {
+    loadError.value = null
     if (!id) {
         resetState()
         markSnapshot()
@@ -997,7 +1002,18 @@ async function loadScenario(id) {
         const data = await scenariosFetch(`/scenario?id=${encodeURIComponent(id)}`)
         applyScenarioPayload(data?.scenario, data?.pause || null, data?.status || null)
     } catch (err) {
-        message.value = err.message || 'Ошибка загрузки сценария'
+        if (err?.status === 404) {
+            resetState()
+            markSnapshot()
+            message.value = ''
+            loadError.value = {
+                type: 'not-found',
+                id,
+                message: 'Сценарий не найден'
+            }
+            return
+        }
+        message.value = err?.message || 'Ошибка загрузки сценария'
     } finally {
         loadingScenario.value = false
     }
@@ -1195,7 +1211,7 @@ function validateLocal() {
         if (Number.isFinite(sh) && Number.isFinite(sm) && Number.isFinite(eh) && Number.isFinite(em)) {
             const startMinutes = sh * 60 + sm
             const endMinutes = eh * 60 + em
-            if (startMinutes >= endMinutes) return 'Время окончания должно быть позже старта'
+            if (startMinutes === endMinutes) return 'Время окончания не должно совпадать со временем старта'
         }
     }
     if (state.color.enabled && !colorSupport.value.available) {
@@ -1413,123 +1429,138 @@ onMounted(async () => {
 
 <template>
     <main class="editor">
-        <header class="editor__header">
-            <div class="editor__head">
-                <div>
-                    <h1>Сценарий</h1>
-                    <p class="editor__meta">
-                        <span>{{ state.id }}</span>
-                        <span v-if="isDirty" class="badge badge--dirty">Черновик</span>
-                        <span v-if="loadingScenario" class="badge badge--loading">Загрузка…</span>
-                    </p>
-                </div>
-                <button v-if="state.id" type="button" class="btn pause" @click="handleTogglePause">
-                    <span v-if="isPaused">▶ Возобновить</span>
-                    <span v-else>⏸ Пауза</span>
-                </button>
+        <section v-if="loadError" class="alert alert--error alert--standalone">
+            <h1>Сценарий не найден</h1>
+            <p>Запрошенный сценарий с идентификатором <code>{{ loadError.id }}</code> не существует.</p>
+            <div class="actions actions--inline">
+                <RouterLink class="btn secondary" :to="{ name: 'scenarios-list' }">К списку сценариев</RouterLink>
+                <RouterLink class="btn primary" :to="{ name: 'scenario-create' }">Создать новый</RouterLink>
             </div>
-            <div class="editor__summary">
-                <input v-model="state.name" placeholder="Название сценария" />
-            </div>
-            <p v-if="isPaused && pauseInfo" class="pause-info">
-                {{ pauseInfo.until ? `На паузе до ${new Date(pauseInfo.until).toLocaleTimeString('ru-RU', {
-                    hour:
-                        '2-digit', minute: '2-digit'
-                })}` : 'На паузе' }}
-            </p>
-        </header>
-
-        <section v-if="statusInfo" class="status-block">
-            <header class="status-block__header">
-                <h2>Статус сценария</h2>
-                <small>{{ formatTimestamp(statusInfo.ts) }}<span v-if="statusInfo.origin"> · {{ statusInfo.origin
-                }}</span></small>
-            </header>
-            <p v-if="statusInfo.result">
-                <strong>{{ statusReasonText(statusInfo.result) }}</strong>
-                <span v-if="statusInfo.result.active"> · Команды: {{ statusInfo.result.actionsSent || 0 }}</span>
-            </p>
-            <p v-else-if="statusInfo.error"><strong>Ошибка:</strong> {{ statusInfo.error.message || statusInfo.error }}
-            </p>
-            <p v-if="statusInfo.result?.pause"><strong>Пауза до:</strong> {{
-                formatTimestamp(statusInfo.result.pause.until) }}</p>
-            <p v-if="statusInfo.result?.presence"><strong>Presence:</strong> {{
-                formatPresenceState(statusInfo.result.presence) }}</p>
-            <details v-if="debugPreview">
-                <summary>Журнал ({{ statusInfo.result?.debug?.length || 0 }})</summary>
-                <pre>{{ debugPreview }}</pre>
-            </details>
         </section>
-
-        <section class="stack">
-            <ScenarioDevicesSection :model-value="state.target" :sections="targetSections" :loading="catalogLoading"
-                :error="catalogError"
-                :show-selected-only="Boolean((state.id || props.scenarioId) && (state.target.groups.length || state.target.devices.length))"
-                @update:model-value="handleTargetUpdate" />
-
-            <ScenarioMappingSection :model-value="state.brightness" :sensor-options="sensorOptions"
-                :support="brightnessSupport" :runtime="brightnessRuntime"
-                @update:model-value="handleBrightnessUpdate" />
-
-            <ColorRamp :model-value="state.color" :support="colorSupport" :runtime="colorRuntime"
-                @update:model-value="handleColorUpdate" />
-
-            <section class="presence-block">
-                <header class="presence-block__header">
+        <template v-else>
+            <header class="editor__header">
+                <div class="editor__head">
                     <div>
-                        <h2>Присутствие</h2>
-                        <p class="presence-block__hint">Ограничьте выполнение сценария состоянием «кто-то дома» из Wi‑Fi
-                            мониторинга.</p>
+                        <h1>Сценарий</h1>
+                        <p class="editor__meta">
+                            <span>{{ state.id }}</span>
+                            <span v-if="isDirty" class="badge badge--dirty">Черновик</span>
+                            <span v-if="loadingScenario" class="badge badge--loading">Загрузка…</span>
+                        </p>
                     </div>
-                </header>
-                <div class="presence-block__options">
-                    <label v-for="choice in presenceChoices" :key="choice.value" class="presence-option">
-                        <input type="radio" name="presence-mode" :value="choice.value" v-model="state.presence.mode" />
-                        <span class="presence-option__text">{{ choice.label }}</span>
-                    </label>
+                    <button v-if="state.id" type="button" class="btn pause" @click="handleTogglePause">
+                        <span v-if="isPaused">▶ Возобновить</span>
+                        <span v-else>⏸ Пауза</span>
+                    </button>
                 </div>
+                <div class="editor__summary">
+                    <input v-model="state.name" placeholder="Название сценария" />
+                </div>
+                <p v-if="isPaused && pauseInfo" class="pause-info">
+                    {{ pauseInfo.until ? `На паузе до ${new Date(pauseInfo.until).toLocaleTimeString('ru-RU', {
+                        hour:
+                            '2-digit', minute: '2-digit'
+                    })}` : 'На паузе' }}
+                </p>
+            </header>
+
+            <section v-if="statusInfo" class="status-block">
+                <header class="status-block__header">
+                    <h2>Статус сценария</h2>
+                    <small>{{ formatTimestamp(statusInfo.ts) }}<span v-if="statusInfo.origin"> · {{ statusInfo.origin
+                    }}</span></small>
+                </header>
+                <p v-if="statusInfo.result">
+                    <strong>{{ statusReasonText(statusInfo.result) }}</strong>
+                    <span v-if="statusInfo.result.active"> · Команды: {{ statusInfo.result.actionsSent || 0 }}</span>
+                </p>
+                <p v-else-if="statusInfo.error"><strong>Ошибка:</strong> {{ statusInfo.error.message || statusInfo.error
+                }}
+                </p>
+                <p v-if="statusInfo.result?.pause"><strong>Пауза до:</strong> {{
+                    formatTimestamp(statusInfo.result.pause.until) }}</p>
+                <p v-if="statusInfo.result?.presence"><strong>Presence:</strong> {{
+                    formatPresenceState(statusInfo.result.presence) }}</p>
+                <details v-if="debugPreview">
+                    <summary>Журнал ({{ statusInfo.result?.debug?.length || 0 }})</summary>
+                    <pre>{{ debugPreview }}</pre>
+                </details>
             </section>
 
-            <ScenarioTimeSection :model-value="state.time" @update:model-value="handleTimeUpdate" />
-        </section>
+            <section class="stack">
+                <ScenarioDevicesSection :model-value="state.target" :sections="targetSections"
+                    :loading="catalogLoading" :error="catalogError"
+                    :show-selected-only="Boolean((state.id || props.scenarioId) && (state.target.groups.length || state.target.devices.length))"
+                    @update:model-value="handleTargetUpdate" />
 
-        <footer class="actions">
-            <button type="button" class="btn primary" :disabled="saving || loadingScenario" @click="handleSave">
-                <span v-if="saving">Сохранение…</span>
-                <span v-else>Сохранить</span>
-            </button>
-            <button type="button" class="btn secondary" :disabled="running || !state.id" @click="handleRun">
-                <span v-if="running">Применение…</span>
-                <span v-else>Применить сейчас</span>
-            </button>
-            <button type="button" class="btn danger" :disabled="deleting || !props.scenarioId || loadingScenario"
-                @click="handleDelete">
-                <span v-if="deleting">Удаление…</span>
-                <span v-else>Удалить</span>
-            </button>
-        </footer>
+                <ScenarioMappingSection :model-value="state.brightness" :sensor-options="sensorOptions"
+                    :support="brightnessSupport" :runtime="brightnessRuntime"
+                    @update:model-value="handleBrightnessUpdate" />
 
-        <section class="log">
-            <div v-if="validationErrors.length" class="alert alert--error">
-                <strong>Ошибки:</strong>
-                <ul>
-                    <li v-for="err in validationErrors" :key="err">{{ err }}</li>
-                </ul>
-            </div>
-            <div v-if="conflict" class="alert alert--warn">
-                <strong>Конфликт сценариев</strong>
-                <p>{{ conflict.message || conflict.error || 'Сценарий пересекается с другим' }}</p>
-                <p v-if="conflict.details?.scenarioId">ID: {{ conflict.details.scenarioId }}</p>
-                <p v-if="Array.isArray(conflict.details?.types)">Типы: {{ conflict.details.types.join(', ') }}</p>
-            </div>
-            <div v-if="warnings.length" class="alert alert--info">
-                <strong>Предупреждения:</strong>
-                <ul>
-                    <li v-for="warn in warnings" :key="warn">{{ warn }}</li>
-                </ul>
-            </div>
-            <p v-if="message" class="muted">{{ message }}</p>
-        </section>
+                <ColorRamp :model-value="state.color" :support="colorSupport" :runtime="colorRuntime"
+                    @update:model-value="handleColorUpdate" />
+
+                <section class="presence-block">
+                    <header class="presence-block__header">
+                        <div>
+                            <h2>Присутствие</h2>
+                            <p class="presence-block__hint">Ограничьте выполнение сценария состоянием «кто-то дома» из
+                                Wi‑Fi
+                                мониторинга.</p>
+                        </div>
+                    </header>
+                    <div class="presence-block__options">
+                        <label v-for="choice in presenceChoices" :key="choice.value" class="presence-option">
+                            <input type="radio" name="presence-mode" :value="choice.value"
+                                v-model="state.presence.mode" />
+                            <span class="presence-option__text">{{ choice.label }}</span>
+                        </label>
+                    </div>
+                </section>
+
+                <ScenarioTimeSection :model-value="state.time" @update:model-value="handleTimeUpdate" />
+            </section>
+
+            <footer class="actions">
+                <button type="button" class="btn primary" :disabled="saving || loadingScenario"
+                    @click="handleSave">
+                    <span v-if="saving">Сохранение…</span>
+                    <span v-else>Сохранить</span>
+                </button>
+                <button type="button" class="btn secondary" :disabled="running || !state.id"
+                    @click="handleRun">
+                    <span v-if="running">Применение…</span>
+                    <span v-else>Применить сейчас</span>
+                </button>
+                <button type="button" class="btn danger" :disabled="deleting || !props.scenarioId || loadingScenario"
+                    @click="handleDelete">
+                    <span v-if="deleting">Удаление…</span>
+                    <span v-else>Удалить</span>
+                </button>
+            </footer>
+
+            <section class="log">
+                <div v-if="validationErrors.length" class="alert alert--error">
+                    <strong>Ошибки:</strong>
+                    <ul>
+                        <li v-for="err in validationErrors" :key="err">{{ err }}</li>
+                    </ul>
+                </div>
+                <div v-if="conflict" class="alert alert--warn">
+                    <strong>Конфликт сценариев</strong>
+                    <p>{{ conflict.message || conflict.error || 'Сценарий пересекается с другим' }}</p>
+                    <p v-if="conflict.details?.scenarioId">ID: {{ conflict.details.scenarioId }}</p>
+                    <p v-if="Array.isArray(conflict.details?.types)">Типы: {{ conflict.details.types.join(', ') }}</p>
+                </div>
+                <div v-if="warnings.length" class="alert alert--info">
+                    <strong>Предупреждения:</strong>
+                    <ul>
+                        <li v-for="warn in warnings" :key="warn">{{ warn }}</li>
+                    </ul>
+                </div>
+                <p v-if="message" class="muted">{{ message }}</p>
+            </section>
+        </template>
     </main>
 </template>
 
@@ -1771,6 +1802,32 @@ onMounted(async () => {
     border: 1px solid transparent;
     font-size: 13px;
     line-height: 1.4;
+}
+
+.alert--standalone {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 24px;
+}
+
+.alert--standalone h1 {
+    margin: 0;
+    font-size: 26px;
+}
+
+.alert--standalone code {
+    background: rgba(15, 23, 42, 0.65);
+    padding: 2px 6px;
+    border-radius: 6px;
+    font-size: 14px;
+    color: #bae6fd;
+}
+
+.actions--inline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
 }
 
 .alert--error {

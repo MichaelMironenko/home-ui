@@ -5,6 +5,7 @@
       <nav>
         <RouterLink to="/" class="nav-link" exact-active-class="active">Главная</RouterLink>
         <RouterLink to="/scenarios" class="nav-link" active-class="active">Сценарии</RouterLink>
+        <RouterLink to="/events" class="nav-link" active-class="active">История</RouterLink>
       </nav>
     </header>
 
@@ -18,7 +19,8 @@
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
-  background: #f5f6fa;
+  background: #0f172a;
+  color: #e2e8f0;
 }
 
 .app-header {

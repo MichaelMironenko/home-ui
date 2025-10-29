@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { trackYandexCall } from '../lib/requestMetrics'
 
 const props = defineProps({
     device: { type: Object, required: true },
@@ -322,6 +323,7 @@ async function toggleOnOff() {
                 on: desired
             }
 
+        trackYandexCall()
         const res = await fetch(api, {
             method: 'POST',
             headers: {

@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue'
+import RangeIntervalSlider from './RangeIntervalSlider.vue'
 
 const props = defineProps({
     modelValue: {
@@ -63,17 +64,6 @@ const setMode = (mode) => {
     updateValue({ mode: mode === 'sensor' ? 'sensor' : 'manual' })
 }
 
-const updateManual = (field, value) => {
-    const numeric = clamp(parseNumber(value) ?? (field === 'from' ? 80 : 20), 1, 100)
-    updateValue({ manual: { [field]: numeric } })
-}
-
-const swapManual = () => {
-    const from = props.modelValue?.manual?.from ?? 80
-    const to = props.modelValue?.manual?.to ?? 20
-    updateValue({ manual: { from: to, to: from } })
-}
-
 const updateSensor = (field, value) => {
     updateValue({ sensor: { [field]: parseNumber(value) } })
 }
@@ -82,37 +72,42 @@ const updateSensorId = (value) => {
     updateValue({ sensor: { sensorId: value } })
 }
 
-const TRACK_SIDE_PADDING = 20
+const BRIGHTNESS_GRADIENT = 'linear-gradient(90deg, rgba(15, 23, 42, 0.92) 0%, rgba(248, 250, 252, 1) 100%)'
+const BRIGHTNESS_GRADIENT_REVERSED = 'linear-gradient(90deg, rgba(248, 250, 252, 1) 0%, rgba(15, 23, 42, 0.92) 100%)'
+const BRIGHTNESS_TICKS = [1, 25, 50, 75, 100]
+const formatPercent = (value) => `${Math.round(value)}%`
 
-const manualVisual = computed(() => {
-    const fromValue = clamp(props.modelValue?.manual?.from ?? 80, 1, 100)
-    const toValue = clamp(props.modelValue?.manual?.to ?? 20, 1, 100)
-    const fromPercent = fromValue - 1
-    const toPercent = toValue - 1
-    const startPercent = Math.min(fromValue, toValue) - 1
-    const widthPercent = Math.max(0, Math.abs(toValue - fromValue))
-    return {
-        fromValue,
-        toValue,
-        fromPercent,
-        toPercent,
-        startPercent,
-        widthPercent
-    }
+const manualRange = computed(() => {
+    const from = clamp(props.modelValue?.manual?.from ?? 80, 1, 100)
+    const to = clamp(props.modelValue?.manual?.to ?? 20, 1, 100)
+    return { from, to }
 })
 
-const currentMarker = computed(() => {
+const manualSummary = computed(
+    () => `Плавное изменение яркости от ${manualRange.value.from}% до ${manualRange.value.to}%`
+)
+
+const manualMarker = computed(() => {
     if (!props.runtime?.active) return null
+    if (props.runtime?.source !== 'backend') return null
     const raw = parseNumber(props.runtime?.value)
     if (!Number.isFinite(raw)) return null
-    const clampedVal = clamp(raw, 0, 100)
-    const sliderValue = Math.max(clampedVal, 1)
+    const clampedValue = clamp(raw, 1, 100)
+    const rounded = Math.round(clampedValue)
     return {
-        value: Math.round(clampedVal),
-        percent: sliderValue - 1,
-        fromBackend: props.runtime?.source === 'backend'
+        value: clampedValue,
+        label: `Сейчас ${rounded}%`,
+        hint: 'Факт с устройств',
+        fromBackend: true
     }
 })
+
+const handleManualRangeChange = (rangeUpdate) => {
+    if (!rangeUpdate) return
+    const fromNumeric = clamp(parseNumber(rangeUpdate.from) ?? manualRange.value.from, 1, 100)
+    const toNumeric = clamp(parseNumber(rangeUpdate.to) ?? manualRange.value.to, 1, 100)
+    updateValue({ manual: { from: fromNumeric, to: toNumeric } })
+}
 </script>
 
 <template>
@@ -120,14 +115,16 @@ const currentMarker = computed(() => {
         <header class="blk__header">
             <div>
                 <h2>Изменение яркости</h2>
-                <p class="blk__hint">
-                    Сценарий плавно управляет яркостью выбранных устройств.
-                </p>
-                <p v-if="support.hasSelection && !support.available" class="blk__hint warn">Выбранные устройства не
-                    поддерживают регулировку яркости.</p>
-                <p v-else-if="support.hasSelection && support.partial" class="blk__hint warn">
-                    Часть устройств без регулировки яркости — сценарий применится только к совместимым.
-                </p>
+                <template v-if="modelValue.enabled">
+                    <p class="blk__hint">
+                        Сценарий плавно управляет яркостью выбранных устройств.
+                    </p>
+                    <p v-if="support.hasSelection && !support.available" class="blk__hint warn">Выбранные устройства не
+                        поддерживают регулировку яркости.</p>
+                    <p v-else-if="support.hasSelection && support.partial" class="blk__hint warn">
+                        Часть устройств без регулировки яркости — сценарий применится только к совместимым.
+                    </p>
+                </template>
             </div>
             <button type="button" class="switch" role="switch" :aria-checked="modelValue.enabled"
                 @click="toggleEnabled(!modelValue.enabled)">
@@ -151,48 +148,12 @@ const currentMarker = computed(() => {
             </div>
 
             <div v-if="modelValue.mode !== 'sensor'" class="manual">
-                <div class="gradient">
-                    <div class="gradient__bar">
-                        <div class="gradient__fill"
-                            :style="{ left: `${manualVisual.startPercent}%`, width: `${manualVisual.widthPercent}%` }">
-                        </div>
-                    </div>
-                    <div class="gradient__markers">
-                        <span class="marker-label marker-label--from"
-                            :style="{ left: `calc(${manualVisual.fromPercent}% + ${TRACK_SIDE_PADDING}px)` }">
-                            <span>Старт</span>
-                        </span>
-                        <span class="marker-label marker-label--to"
-                            :style="{ left: `calc(${manualVisual.toPercent}% + ${TRACK_SIDE_PADDING}px)` }">
-                            <span>Финиш</span>
-                        </span>
-                        <span v-if="currentMarker" class="gradient__marker gradient__marker--current"
-                            :style="{ left: `calc(${currentMarker.percent}% + ${TRACK_SIDE_PADDING}px)` }"
-                            :title="currentMarker.fromBackend ? 'Факт с устройств' : 'Расчётное значение'">
-                            Сейчас {{ currentMarker.value }}%
-                        </span>
-                    </div>
-                    <input class="slider slider--from" type="range" min="1" max="100"
-                        :value="modelValue.manual?.from ?? 80" @input="updateManual('from', $event.target.value)" />
-                    <input class="slider slider--to" type="range" min="1" max="100" :value="modelValue.manual?.to ?? 20"
-                        @input="updateManual('to', $event.target.value)" />
-                </div>
-
-                <div class="manual__inputs">
-                    <label class="manual__field">
-                        <span>Старт</span>
-                        <input type="number" min="1" max="100" :value="modelValue.manual?.from ?? 80"
-                            @input="updateManual('from', $event.target.value)" />
-                    </label>
-                    <button type="button" class="swap" @click="swapManual" title="Поменять местами">
-                        ⇄
-                    </button>
-                    <label class="manual__field">
-                        <span>Финиш</span>
-                        <input type="number" min="1" max="100" :value="modelValue.manual?.to ?? 20"
-                            @input="updateManual('to', $event.target.value)" />
-                    </label>
-                </div>
+                <RangeIntervalSlider :model-value="manualRange" :min="1" :max="100" :step="1" :gap="1"
+                    :gradient="BRIGHTNESS_GRADIENT" :gradient-reverse="BRIGHTNESS_GRADIENT_REVERSED"
+                    :summary="manualSummary" start-label="Старт" end-label="Финиш"
+                    :ticks="BRIGHTNESS_TICKS" :tick-formatter="formatPercent" :format-value="formatPercent"
+                    :marker="manualMarker" @update:modelValue="handleManualRangeChange"
+                    @invert="handleManualRangeChange" />
             </div>
 
             <div v-else class="sensor">
@@ -347,10 +308,6 @@ const currentMarker = computed(() => {
     background: #f8fafc;
 }
 
-.switch__label {
-    font-weight: 500;
-}
-
 .body {
     display: flex;
     flex-direction: column;
@@ -383,161 +340,6 @@ const currentMarker = computed(() => {
     display: flex;
     flex-direction: column;
     gap: 14px;
-}
-
-.gradient {
-    position: relative;
-    height: 90px;
-}
-
-.gradient__bar {
-    position: absolute;
-    inset: 18px 20px;
-    background: linear-gradient(90deg, #000, #fff);
-    border-radius: 999px;
-    overflow: hidden;
-}
-
-.gradient__fill {
-    position: absolute;
-    top: 0;
-    height: 100%;
-    background: rgba(59, 130, 246, 0.45);
-    border-radius: inherit;
-    pointer-events: none;
-}
-
-.gradient__markers {
-    position: absolute;
-    inset: 0 0 auto 0;
-    height: 100%;
-    pointer-events: none;
-}
-
-.gradient__marker,
-.marker-label {
-    position: absolute;
-    top: 20px;
-    transform: translate(-50%, -50%);
-    z-index: 3;
-    pointer-events: none;
-}
-
-.marker-label::before {
-    content: '';
-    position: absolute;
-    inset: -18px -24px;
-}
-
-.marker-label span {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 4px 12px;
-    border-radius: 999px;
-    border: 1px solid rgba(96, 165, 250, 0.45);
-    background: rgba(30, 64, 175, 0.7);
-    color: #dbeafe;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    white-space: nowrap;
-}
-
-.marker-label--to span {
-    color: #ede9fe;
-    border-color: rgba(129, 140, 248, 0.4);
-    background: rgba(79, 70, 229, 0.7);
-}
-
-.gradient__marker--current {
-    top: 68px;
-    height: auto;
-    min-width: 72px;
-    padding: 4px 10px;
-    border-radius: 999px;
-    font-size: 12px;
-    font-weight: 500;
-    background: rgba(34, 197, 94, 0.18);
-    border-color: rgba(74, 222, 128, 0.35);
-    color: #bbf7d0;
-    text-transform: none;
-}
-
-.slider {
-    position: absolute;
-    left: 0;
-    right: 0;
-    margin: 0;
-    width: 100%;
-    background: transparent;
-    -webkit-appearance: none;
-    appearance: none;
-    /* Let page scroll vertically when gesture is vertical */
-    touch-action: pan-y;
-}
-
-.slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: #60a5fa;
-    border: 2px solid #1f2937;
-    cursor: pointer;
-}
-
-.slider::-moz-range-thumb {
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: #60a5fa;
-    border: 2px solid #1f2937;
-    cursor: pointer;
-}
-
-.slider--from {
-    top: 0;
-}
-
-.slider--to {
-    bottom: 0;
-}
-
-.manual__inputs {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-end;
-    gap: 12px;
-}
-
-.manual__field {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    color: #cbd5f5;
-}
-
-.manual__field input {
-    width: 72px;
-}
-
-.swap {
-    width: 72px;
-    height: 40px;
-    border-radius: 10px;
-    border: 1px solid rgba(96, 165, 250, 0.35);
-    background: rgba(17, 24, 39, 0.65);
-    color: #bfdbfe;
-    font-size: 18px;
-    cursor: pointer;
-    transition: background 0.15s, border-color 0.15s;
-}
-
-.swap:hover {
-    background: rgba(37, 99, 235, 0.35);
-    border-color: rgba(59, 130, 246, 0.6);
 }
 
 input[type='number'] {
