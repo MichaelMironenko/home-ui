@@ -1,11 +1,37 @@
-import { trackFunctionCall } from './requestMetrics'
+import { trackFunctionCall } from './requestMetrics';
 
 let cfg = null;
-export async function getConfig() {
-  if (cfg) return cfg;
-  const res = await fetch('/config.json'); // из public/
-  cfg = await res.json();
+let pendingConfig = null;
+
+async function requestConfig() {
+  const res = await fetch('/config.json', { cache: 'no-store' });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || `config.json request failed (${res.status})`);
+  }
+  const data = await res.json();
+  cfg = data || {};
   return cfg;
+}
+
+export async function getConfig(force = false) {
+  if (!force && cfg) return cfg;
+  if (!force && pendingConfig) return pendingConfig;
+  const promise = requestConfig();
+  if (!force) {
+    pendingConfig = promise.then(
+      (value) => {
+        pendingConfig = null;
+        return value;
+      },
+      (err) => {
+        pendingConfig = null;
+        throw err;
+      }
+    );
+    return pendingConfig;
+  }
+  return promise;
 }
 
 export async function callPresence(status, device = 'UI') {

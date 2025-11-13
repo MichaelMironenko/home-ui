@@ -1,12 +1,37 @@
+<script setup>
+import { computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useAuth } from './composables/useAuth'
+
+const route = useRoute()
+const router = useRouter()
+const auth = useAuth()
+
+const isLoginRoute = computed(() => route.name === 'login')
+const currentUser = computed(() => auth.user.value)
+
+async function logout() {
+  await auth.logout()
+  router.push({ name: 'login', query: { redirect: route.fullPath || '/' } })
+}
+</script>
+
 <template>
   <div class="app-shell">
-    <header class="app-header">
+    <header v-if="!isLoginRoute" class="app-header">
       <h1>Smart Home</h1>
       <nav>
         <RouterLink to="/" class="nav-link" exact-active-class="active">Главная</RouterLink>
         <RouterLink to="/scenarios" class="nav-link" active-class="active">Сценарии</RouterLink>
         <RouterLink to="/events" class="nav-link" active-class="active">История</RouterLink>
       </nav>
+      <div class="user-section" v-if="currentUser">
+        <div class="user-info">
+          <span class="user-name">{{ currentUser.displayName || currentUser.login }}</span>
+          <span v-if="currentUser.email" class="user-email">{{ currentUser.email }}</span>
+        </div>
+        <button type="button" class="logout-btn" @click="logout">Выйти</button>
+      </div>
     </header>
 
     <router-view />
@@ -56,5 +81,44 @@ nav {
 
 .nav-link.active {
   color: #60a5fa;
+}
+
+.user-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #1f2937;
+  padding: 10px 16px;
+  border-radius: 12px;
+}
+
+.user-info {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.user-name {
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.user-email {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.logout-btn {
+  border: none;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-weight: 600;
+  background: #ef4444;
+  color: #0f172a;
+  cursor: pointer;
+}
+
+.logout-btn:hover {
+  background: #f87171;
 }
 </style>

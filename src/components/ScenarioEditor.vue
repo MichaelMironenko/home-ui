@@ -4,6 +4,7 @@ import ScenarioDevicesSection from './ScenarioDevicesSection.vue'
 import ScenarioMappingSection from './ScenarioMappingSection.vue'
 import ScenarioTimeSection from './ScenarioTimeSection.vue'
 import ColorRamp from './ColorRamp.vue'
+import PresenceOptions from './PresenceOptions.vue'
 import {
     extractBrightnessValue,
     extractColorTemperature,
@@ -18,6 +19,7 @@ import {
 } from '../utils/color.js'
 import { useTargetDevices } from '../composables/useTargetDevices'
 import { trackFunctionCall } from '../lib/requestMetrics'
+import { getConfig } from '../lib/api'
 
 const props = defineProps({
     scenarioId: { type: String, default: '' }
@@ -88,6 +90,7 @@ function statusReasonText(result) {
     if (result.active) return 'Активен'
     if (result.reason === 'manual_pause') return 'На паузе'
     if (result.reason === 'presence_guard') return 'Заблокирован по присутствию'
+    if (result.reason === 'disabled') return 'Отключен'
     if (result.reason) return result.reason
     return result.active === false ? 'Не активен' : ''
 }
@@ -121,6 +124,7 @@ const catalog = reactive({
 const state = reactive({
     id: '',
     name: '',
+    disabled: false,
     target: { groups: [], devices: [] },
     time: {
         tz: 'Europe/Moscow',
@@ -179,6 +183,8 @@ const isCatalogScenario = computed(() => {
         extras.catalog
     )
 })
+
+const isDisabled = computed(() => state.disabled === true)
 
 function computeLocalTimeProgress(timeConfig) {
     if (!timeConfig) return { active: false, progress: null }
@@ -764,6 +770,7 @@ function markSnapshot() {
 function resetState() {
     setScenarioId('')
     state.name = ''
+    state.disabled = false
     state.target.groups = []
     state.target.devices = []
     state.time = {
@@ -826,9 +833,7 @@ function normalizeScenarioTimeBlock(block, fallbackTime = '18:00') {
 
 async function loadConfig() {
     try {
-        const res = await fetch('/config.json')
-        if (!res.ok) throw new Error('config load failed')
-        const data = await res.json()
+        const data = await getConfig()
         config.scenariosBase = normalizeBase(
             data.scenariosUrl || data.scenariosURL || data.scenarioUrl || data.scenariosBase || ''
         )
@@ -851,6 +856,7 @@ async function scenariosFetch(path, options = {}) {
     const res = await fetch(config.scenariosBase + path, {
         ...options,
         headers,
+        credentials: options.credentials ?? 'include',
         body: options.body !== undefined ? JSON.stringify(options.body) : undefined
     })
     const text = await res.text()
@@ -894,6 +900,7 @@ function applyScenarioPayload(payload, pause = null, status = null) {
     }
     setScenarioId(payload.id || props.scenarioId || fallbackId.value)
     state.name = payload.name || ''
+    state.disabled = payload.disabled === true
     scenarioVersion.value = Number(payload.version) || 1
     state.target.groups = sanitizeIdList(payload.target?.groups)
     state.target.devices = sanitizeIdList(payload.target?.devices)
@@ -1184,6 +1191,7 @@ function buildScenarioPayload() {
         version: scenarioVersion.value || 1,
         type: 'scenario-v1',
         name: state.name?.trim() || 'Новый сценарий',
+        disabled: !!state.disabled,
         target: { groups, devices },
         time,
         actions
@@ -1271,6 +1279,10 @@ async function handleSave() {
 async function handleRun() {
     if (!state.id) {
         message.value = 'Сценарий ещё не сохранён'
+        return
+    }
+    if (state.disabled) {
+        message.value = 'Сценарий отключен'
         return
     }
     running.value = true
@@ -1366,6 +1378,10 @@ function handleColorUpdate(next) {
 
 async function handleTogglePause() {
     if (!state.id) return
+    if (state.disabled) {
+        message.value = 'Сценарий отключен'
+        return
+    }
     try {
         const path = isPaused.value ? '/resume' : '/pause'
         const res = await scenariosFetch(path, { method: 'POST', body: { id: state.id } })
@@ -1390,6 +1406,16 @@ async function handleTogglePause() {
         }
     } catch (err) {
         message.value = err?.message || 'Не удалось изменить паузу'
+    }
+}
+
+function toggleDisabled() {
+    state.disabled = !state.disabled
+    if (state.disabled) {
+        pauseInfo.value = null
+        message.value = 'Сценарий выключен'
+    } else {
+        message.value = 'Сценарий включен'
     }
 }
 
@@ -1446,12 +1472,19 @@ onMounted(async () => {
                             <span>{{ state.id }}</span>
                             <span v-if="isDirty" class="badge badge--dirty">Черновик</span>
                             <span v-if="loadingScenario" class="badge badge--loading">Загрузка…</span>
+                            <span v-if="isDisabled" class="badge badge--disabled">Отключен</span>
                         </p>
                     </div>
-                    <button v-if="state.id" type="button" class="btn pause" @click="handleTogglePause">
-                        <span v-if="isPaused">▶ Возобновить</span>
-                        <span v-else>⏸ Пауза</span>
-                    </button>
+                    <div v-if="state.id" class="editor__head-actions">
+                        <button type="button" class="btn secondary" @click="toggleDisabled">
+                            <span v-if="isDisabled">Включить</span>
+                            <span v-else>Выключить</span>
+                        </button>
+                        <button type="button" class="btn pause" @click="handleTogglePause" :disabled="isDisabled">
+                            <span v-if="isPaused">▶ Возобновить</span>
+                            <span v-else>⏸ Пауза</span>
+                        </button>
+                    </div>
                 </div>
                 <div class="editor__summary">
                     <input v-model="state.name" placeholder="Название сценария" />
@@ -1505,17 +1538,14 @@ onMounted(async () => {
                         <div>
                             <h2>Присутствие</h2>
                             <p class="presence-block__hint">Ограничьте выполнение сценария состоянием «кто-то дома» из
-                                Wi‑Fi
-                                мониторинга.</p>
+                                Wi‑Fi мониторинга.</p>
                         </div>
                     </header>
-                    <div class="presence-block__options">
-                        <label v-for="choice in presenceChoices" :key="choice.value" class="presence-option">
-                            <input type="radio" name="presence-mode" :value="choice.value"
-                                v-model="state.presence.mode" />
-                            <span class="presence-option__text">{{ choice.label }}</span>
-                        </label>
-                    </div>
+                    <PresenceOptions
+                        v-model="state.presence.mode"
+                        :choices="presenceChoices"
+                        name="presence-mode"
+                    />
                 </section>
 
                 <ScenarioTimeSection :model-value="state.time" @update:model-value="handleTimeUpdate" />
@@ -1527,7 +1557,7 @@ onMounted(async () => {
                     <span v-if="saving">Сохранение…</span>
                     <span v-else>Сохранить</span>
                 </button>
-                <button type="button" class="btn secondary" :disabled="running || !state.id"
+                <button type="button" class="btn secondary" :disabled="running || !state.id || isDisabled"
                     @click="handleRun">
                     <span v-if="running">Применение…</span>
                     <span v-else>Применить сейчас</span>
@@ -1586,6 +1616,11 @@ onMounted(async () => {
     gap: 12px;
 }
 
+.editor__head-actions {
+    display: flex;
+    gap: 10px;
+}
+
 .editor__header h1 {
     margin: 0;
     font-size: 24px;
@@ -1618,6 +1653,11 @@ onMounted(async () => {
 .badge--loading {
     background: rgba(96, 165, 250, 0.2);
     color: #60a5fa;
+}
+
+.badge--disabled {
+    background: rgba(148, 163, 184, 0.25);
+    color: #cbd5f5;
 }
 
 .btn.pause {
@@ -1725,13 +1765,13 @@ onMounted(async () => {
     color: #94a3b8;
 }
 
-.presence-block__options {
+.presence-block :deep(.presence-options) {
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
 }
 
-.presence-option {
+.presence-block :deep(.presence-option) {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -1743,11 +1783,17 @@ onMounted(async () => {
     cursor: pointer;
 }
 
-.presence-option input {
+.presence-block :deep(.presence-option.active) {
+    border-color: rgba(96, 165, 250, 0.5);
+    background: rgba(37, 99, 235, 0.35);
+    box-shadow: 0 8px 18px rgba(37, 99, 235, 0.26);
+}
+
+.presence-block :deep(.presence-option input) {
     margin: 0;
 }
 
-.presence-option__text {
+.presence-block :deep(.presence-option span) {
     font-size: 14px;
 }
 

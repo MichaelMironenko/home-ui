@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { trackFunctionCall } from '../lib/requestMetrics'
+import { getConfig } from '../lib/api'
 
 const router = useRouter()
 const cfg = ref({ base: '', keyHeader: 'x-api-key', keyValue: '' })
@@ -12,8 +13,7 @@ const toggling = ref({})
 
 async function loadConfig() {
   try {
-    const res = await fetch('/config.json')
-    const raw = await res.json()
+    const raw = await getConfig()
     cfg.value.base = (raw.scenariosUrl || raw.scenariosURL || raw.scenarioUrl || '').replace(/\/+$/, '')
     cfg.value.keyHeader = raw.keyHeader || raw['x-api-key-header'] || 'x-api-key'
     cfg.value.keyValue = raw.keyValue || raw.apiKey || raw['x-api-key'] || ''
@@ -31,6 +31,7 @@ async function scenariosRequest(path, options = {}) {
   const res = await fetch(`${cfg.value.base}${path}`, {
     ...options,
     headers,
+    credentials: options.credentials ?? 'include',
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
   })
   const text = await res.text()
@@ -51,24 +52,26 @@ async function loadScenarios() {
   loading.value = true
   error.value = ''
   try {
-    const data = await scenariosRequest('/list')
-    if (Array.isArray(data?.scenarios)) {
-      scenarios.value = data.scenarios.map((entry) => {
-        const key = String(entry?.key || '').trim()
-        const cleanedId = key.replace(/^scenarios\//, '').replace(/\.json$/i, '')
-        const id = String(entry?.id || cleanedId || '').trim()
-        const name = String(entry?.name || cleanedId || id || '').trim() || 'Без имени'
-        return {
-          id,
-          name,
-          key,
-          size: Number(entry?.size) || 0,
-          lastModified: entry?.lastModified || '',
-          pause: entry?.pause || null,
-          status: summarizeStatusRecord(entry?.status || null),
-        }
-      })
-    } else if (data?.ok === false && data?.error) {
+        const data = await scenariosRequest('/list')
+        if (Array.isArray(data?.scenarios)) {
+          scenarios.value = data.scenarios.map((entry) => {
+            const key = String(entry?.key || '').trim()
+            const cleanedId = key.replace(/^scenarios\//, '').replace(/\.json$/i, '')
+            const id = String(entry?.id || cleanedId || '').trim()
+            const name = String(entry?.name || cleanedId || id || '').trim() || 'Без имени'
+            return {
+              id,
+              name,
+              key,
+              size: Number(entry?.size) || 0,
+              lastModified: entry?.lastModified || '',
+              pause: entry?.pause || null,
+              status: summarizeStatusRecord(entry?.status || null),
+              type: entry?.type || null,
+              disabled: entry?.disabled === true,
+            }
+          })
+        } else if (data?.ok === false && data?.error) {
       scenarios.value = []
       error.value = data.error
     } else {
@@ -92,6 +95,11 @@ const formatBytes = (value) => {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
+function scenarioTypeLabel(type) {
+  if (type === 'auto-light-v1') return 'Автоматический свет'
+  return 'Сценарий V1'
+}
+
 function formatModified(item) {
   if (!item?.lastModified) return ''
   try {
@@ -101,13 +109,21 @@ function formatModified(item) {
   }
 }
 
-function openScenario(id) {
-  if (!id) return
-  router.push({ name: 'scenario-edit', params: { id } })
+function openScenario(item) {
+  if (!item || !item.id) return
+  if (item.type === 'auto-light-v1') {
+    router.push({ name: 'auto-light-edit', params: { id: item.id } })
+  } else {
+    router.push({ name: 'scenario-edit', params: { id: item.id } })
+  }
 }
 
 function createScenario() {
   router.push({ name: 'scenario-create' })
+}
+
+function createAutoLightScenario() {
+  router.push({ name: 'auto-light-create' })
 }
 
 function isPaused(item) {
@@ -142,11 +158,13 @@ function summarizeStatusRecord(status) {
 
 function statusText(item) {
   const status = item?.status
+  if (item?.disabled) return 'Отключен'
   if (!status) return 'Нет данных'
   if (status.error) return `Ошибка: ${status.error.message || status.error}`
   if (status.result) {
     if (status.result.reason === 'manual_pause') return 'На паузе'
     if (status.result.reason === 'presence_guard') return 'Заблокирован по присутствию'
+    if (status.result.reason === 'disabled') return 'Отключен'
     if (status.result.active) return 'Активен'
     if (status.result.reason) return status.result.reason
     if (status.result.active === false) return 'Не активен'
@@ -156,6 +174,11 @@ function statusText(item) {
 
 async function togglePause(item) {
   if (!item?.id || toggling.value[item.id]) return
+  if (item?.disabled) {
+    error.value = 'Сценарий отключен — включите его, чтобы управлять паузой'
+    return
+  }
+  if (item?.disabled) return
   toggling.value = { ...toggling.value, [item.id]: true }
   try {
     if (isPaused(item)) {
@@ -187,7 +210,10 @@ onMounted(async () => {
         <h1>Сценарии</h1>
         <p class="subtitle">Управляйте сценариями освещения и автоматизации</p>
       </div>
-      <button class="primary" type="button" @click="createScenario">Создать новый сценарий</button>
+      <div class="actions">
+        <button class="primary" type="button" @click="createScenario">Создать сценарий</button>
+        <button class="secondary" type="button" @click="createAutoLightScenario">Автоматический свет</button>
+      </div>
     </header>
 
     <section class="panel" v-if="loading">
@@ -206,24 +232,26 @@ onMounted(async () => {
         v-for="item in scenarios"
         :key="item.id || item.key || item.name"
         class="card"
-        :class="{ paused: isPaused(item) }"
+        :class="{ paused: isPaused(item), disabled: item.disabled }"
       >
             <header class="card__header">
                 <div
                     class="card__title"
                     role="button"
                     tabindex="0"
-                    @click="openScenario(item.id)"
-                    @keyup.enter="openScenario(item.id)"
+                    @click="openScenario(item)"
+                    @keyup.enter="openScenario(item)"
                 >
                     <h2>{{ item.name }}</h2>
-                    <p v-if="isPaused(item)" class="status status--paused">{{ pauseLabel(item) }}</p>
+                    <p v-if="item.disabled" class="status status--disabled">Отключен</p>
+                    <p v-else-if="isPaused(item)" class="status status--paused">{{ pauseLabel(item) }}</p>
                     <p v-else class="status status--active">{{ statusText(item) }}</p>
+                    <span v-if="item.type" class="type-chip">{{ scenarioTypeLabel(item.type) }}</span>
                 </div>
           <button
             type="button"
             class="toggle"
-            :disabled="toggling[item.id]"
+            :disabled="toggling[item.id] || item.disabled"
             @click.stop="togglePause(item)"
           >
             <span v-if="isPaused(item)">▶ Возобновить</span>
@@ -258,6 +286,11 @@ onMounted(async () => {
   gap: 12px;
 }
 
+.hero .actions {
+  display: flex;
+  gap: 8px;
+}
+
 .hero h1 {
   margin: 0;
   font-size: 28px;
@@ -277,6 +310,32 @@ onMounted(async () => {
   font-weight: 600;
   cursor: pointer;
   transition: transform .1s ease, box-shadow .15s;
+}
+
+.secondary {
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: 1px solid #94a3b8;
+  background: #f8fafc;
+  color: #1f2937;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+
+.secondary:hover {
+  background: #e2e8f0;
+}
+
+.type-chip {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #4338ca;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .primary:hover {
@@ -318,6 +377,11 @@ onMounted(async () => {
   box-shadow: 0 6px 18px rgba(249, 115, 22, 0.28);
 }
 
+.card.disabled {
+  opacity: 0.65;
+  border-style: dashed;
+}
+
 .card__header {
   display: flex;
   justify-content: space-between;
@@ -343,6 +407,10 @@ onMounted(async () => {
 
 .status--active {
   color: #0f766e;
+}
+
+.status--disabled {
+  color: #6b7280;
 }
 
 .toggle {

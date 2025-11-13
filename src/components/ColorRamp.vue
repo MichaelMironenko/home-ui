@@ -24,7 +24,7 @@ const clamp = (value, min, max) => {
     return Math.min(Math.max(value, min), max)
 }
 
-const TEMPERATURE_MIN = 2000
+const TEMPERATURE_MIN = 1000
 const TEMPERATURE_MAX = 7000
 const TEMPERATURE_STEP = 100
 const TEMPERATURE_GAP = 100

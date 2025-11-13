@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { trackFunctionCall } from '../lib/requestMetrics'
+import { getConfig } from '../lib/api'
 
 const cfg = ref({ base: '', keyHeader: 'x-api-key', keyValue: '' })
 const loading = ref(false)
@@ -18,9 +19,7 @@ function normalizeBase(url = '') {
 
 async function loadConfig() {
   try {
-    const res = await fetch('/config.json')
-    if (!res.ok) throw new Error('config load failed')
-    const raw = await res.json()
+    const raw = await getConfig()
     cfg.value.base = normalizeBase(
       raw.scenariosUrl || raw.scenariosURL || raw.scenarioUrl || raw.scenariosBase || ''
     )
@@ -224,6 +223,14 @@ function normalizeEvents(list, maps) {
         nextRequestText = raw.schedule.nextRequest
       }
     }
+    const functionSummary = Array.isArray(raw?.functionLog) ? raw.functionLog.reduce((acc, entry) => {
+      const key = entry?.reason || 'unknown'
+      acc[key] = (acc[key] || 0) + 1
+      return acc
+    }, {}) : {}
+    const functionBreakdown = Object.entries(functionSummary)
+      .map(([reason, count]) => ({ reason, count }))
+      .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason))
 
     return {
       id: raw?.id || `evt_${timestamp}`,
@@ -245,6 +252,7 @@ function normalizeEvents(list, maps) {
       requestSummary,
       nextRunText,
       nextRequestText,
+      functionBreakdown,
     }
   })
   return mapped.sort((a, b) => b.timestamp - a.timestamp)
@@ -308,6 +316,17 @@ const yandexBreakdown = computed(() => {
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
 })
 
+const functionBreakdownMetrics = computed(() => {
+  const bucket = metricsSnapshot.value?.functionBreakdown || {}
+  return Object.entries(bucket)
+    .map(([key, value]) => ({
+      key,
+      label: key,
+      count: Number(value) || 0,
+    }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+})
+
 async function loadMetrics() {
   if (!cfg.value.base) return
   metricsLoading.value = true
@@ -319,6 +338,7 @@ async function loadMetrics() {
       yandexCalls: Number(data?.yandexCalls) || 0,
       functionCalls: Number(data?.functionCalls) || 0,
       yandexBreakdown: data?.yandexBreakdown || {},
+      functionBreakdown: data?.functionBreakdown || {},
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -374,14 +394,27 @@ async function refreshAll() {
       </header>
       <p v-if="metricsLoading" class="metrics-note">Обновляем статистику…</p>
       <p v-else-if="metricsError" class="metrics-note error">{{ metricsError }}</p>
-      <div v-else>
-        <p v-if="!yandexBreakdown.length" class="metrics-note">Пока нет обращений к Yandex API.</p>
-        <ul v-else class="metrics-list">
-          <li v-for="entry in yandexBreakdown" :key="entry.key" class="metrics-row">
-            <span class="row-label">{{ entry.label }}</span>
-            <span class="row-value">{{ entry.count }}</span>
-          </li>
-        </ul>
+      <div v-else class="metrics-sections">
+        <section class="metrics-subsection">
+          <h3 class="metrics-subheading">Yandex API</h3>
+          <p v-if="!yandexBreakdown.length" class="metrics-note">Пока нет обращений к Yandex API.</p>
+          <ul v-else class="metrics-list">
+            <li v-for="entry in yandexBreakdown" :key="entry.key" class="metrics-row">
+              <span class="row-label">{{ entry.label }}</span>
+              <span class="row-value">{{ entry.count }}</span>
+            </li>
+          </ul>
+        </section>
+        <section class="metrics-subsection">
+          <h3 class="metrics-subheading">Функция</h3>
+          <p v-if="!functionBreakdownMetrics.length" class="metrics-note">Вызовов функции пока нет.</p>
+          <ul v-else class="metrics-list">
+            <li v-for="entry in functionBreakdownMetrics" :key="entry.key" class="metrics-row">
+              <span class="row-label">{{ entry.label }}</span>
+              <span class="row-value">{{ entry.count }}</span>
+            </li>
+          </ul>
+        </section>
       </div>
     </section>
 
@@ -435,6 +468,15 @@ async function refreshAll() {
             <li v-for="req in event.requestSummary" :key="req.kind" class="requests-row">
               <span class="requests-kind">{{ req.kind }}</span>
               <span class="requests-count">{{ req.count }}</span>
+            </li>
+          </ul>
+        </div>
+        <div class="event-functions" v-if="event.functionBreakdown && event.functionBreakdown.length">
+          <div class="requests-title">Вызовы функции</div>
+          <ul class="requests-list">
+            <li v-for="fn in event.functionBreakdown" :key="fn.reason" class="requests-row">
+              <span class="requests-kind">{{ fn.reason }}</span>
+              <span class="requests-count">{{ fn.count }}</span>
             </li>
           </ul>
         </div>
@@ -567,6 +609,25 @@ async function refreshAll() {
 
 .metrics-note.error {
   color: #fca5a5;
+}
+
+.metrics-sections {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.metrics-subsection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.metrics-subheading {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #e2e8f0;
 }
 
 .metrics-list {
@@ -717,6 +778,7 @@ async function refreshAll() {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  margin-bottom: 8px;
 }
 
 .requests-title {
@@ -755,6 +817,14 @@ async function refreshAll() {
 .requests-count {
   font-weight: 600;
   color: #38bdf8;
+}
+
+.event-functions {
+  border-top: 1px solid rgba(148, 163, 184, 0.15);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .event-next-run {

@@ -9,16 +9,19 @@ import {
 const summarizeDevice = (device, roomsById) => {
   const roomId = device?.room || ''
   const roomName = roomId ? roomsById.value.get(roomId)?.name : ''
+  const supportsBrightness = hasBrightnessCapability(device)
+  const supportsColor = supportsColorCapability(device)
   return {
     id: device.id,
     name: device.name || 'Без имени',
     detail: roomName || device.roomName || '',
     roomId,
     supports: {
-      brightness: hasBrightnessCapability(device),
-      color: supportsColorCapability(device),
+      brightness: supportsBrightness,
+      color: supportsColor,
       power: hasPowerCapability(device)
-    }
+    },
+    allowAutoLight: supportsBrightness && supportsColor
   }
 }
 
@@ -45,8 +48,9 @@ export function useTargetDevices(catalog, target) {
         const memberIds = Array.isArray(group.devices) ? group.devices : []
         const members = memberIds
           .map((id) => devicesById.value.get(id))
-          .filter(isTargetDevice)
+          .filter((device) => isTargetDevice(device))
           .map((device) => summarizeDevice(device, roomsById))
+          .filter((device) => device.allowAutoLight)
         if (!members.length) return null
         const supports = members.reduce(
           (acc, item) => ({
@@ -102,6 +106,7 @@ export function useTargetDevices(catalog, target) {
     return (catalog.devices || [])
       .filter((device) => isTargetDevice(device) && !groupedDeviceIds.value.has(device.id))
       .map((device) => summarizeDevice(device, roomsById))
+      .filter((device) => device.allowAutoLight)
   })
 
   const sections = computed(() => {

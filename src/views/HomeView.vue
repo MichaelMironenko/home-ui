@@ -170,7 +170,7 @@ async function sendGroupColorHSV(h, s, v) {
         </label>
         <label class="slider">
           <span>Температура: {{ tempTester.value }}K</span>
-          <input type="range" min="1500" max="6500" step="50"
+          <input type="range" min="1000" max="6500" step="50"
                  :value="tempTester.value"
                  @input="sendGroupTemperature(Number($event.target.value))" />
         </label>
