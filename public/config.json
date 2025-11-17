@@ -1,6 +1,6 @@
 {
   "autoUrl": "https://d5df791htlhs38j5hugr.o2p3jdjj.apigw.yandexcloud.net",
   "presUrl": "https://d5df791htlhs38j5hugr.o2p3jdjj.apigw.yandexcloud.net/presence",
-  "api": "http://158.160.181.73/api",
-  "scenariosURL": "http://158.160.181.73"
+  "api": "/api",
+  "scenariosURL": "http://127.0.0.1:3000"
 }

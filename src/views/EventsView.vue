@@ -39,6 +39,7 @@ async function apiFetch(path, options = {}) {
   const res = await fetch(`${cfg.value.base}${path}`, {
     ...options,
     headers,
+    credentials: options.credentials ?? 'include',
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
   })
   const text = await res.text()

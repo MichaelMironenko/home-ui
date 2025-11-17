@@ -7,6 +7,18 @@ export default defineConfig({
   server: {
     host: '127.0.0.1',
     port: 5175,
+    proxy: {
+      // всё /api/* шлём на бэк
+      '/api': {
+        target: 'http://127.0.0.1:3000',
+        changeOrigin: true,
+      },
+      // и всё /auth/* тоже на бэк
+      '/auth': {
+        target: 'http://127.0.0.1:3000',
+        changeOrigin: true,
+      },
+    },
     watch: {
       usePolling: true,
       interval: 100
