@@ -25,7 +25,8 @@ onMounted(async () => {
             headers: {
                 'Content-Type': 'application/json',
                 ...(props.apiKey ? { 'x-api-key': props.apiKey } : {}),
-            }
+            },
+            credentials: 'include',
         })
         const data = await res.json()
 
