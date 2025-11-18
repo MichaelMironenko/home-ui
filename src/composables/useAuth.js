@@ -71,12 +71,18 @@ async function login(redirectTarget) {
 async function logout() {
   const base = await ensureBaseUrl()
   try {
-    await fetch(`${base}/auth/logout`, {
+    const res = await fetch(`${base}/auth/logout`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: '{}'
     })
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new Error(text || `Logout failed (${res.status})`)
+    } else {
+      await res.text().catch(() => '')
+    }
   } catch (err) {
     console.warn('[auth] logout failed', err)
   }

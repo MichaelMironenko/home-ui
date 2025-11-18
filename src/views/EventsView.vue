@@ -46,7 +46,7 @@ async function apiFetch(path, options = {}) {
   let json
   try { json = text ? JSON.parse(text) : null } catch { json = null }
   if (!res.ok) {
-    throw new Error(json?.error || res.statusText || 'Request failed')
+    throw new Error(json?.error || text || res.statusText || 'Request failed')
   }
   return json
 }

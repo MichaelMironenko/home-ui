@@ -39,9 +39,10 @@ export function useScenarioApi() {
             json = null;
         }
         if (!response.ok) {
-            const message = json?.error || response.statusText || 'Request failed';
+            const message = json?.error || text || response.statusText || 'Request failed';
             const error = new Error(message);
             error.data = json;
+            error.raw = text;
             throw error;
         }
         return json;

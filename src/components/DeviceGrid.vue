@@ -28,7 +28,16 @@ onMounted(async () => {
             },
             credentials: 'include',
         })
-        const data = await res.json()
+        const text = await res.text()
+        let data
+        try {
+            data = text ? JSON.parse(text) : null
+        } catch (_) {
+            throw new Error(text || `Malformed response (${res.status})`)
+        }
+        if (!res.ok) {
+            throw new Error(data?.error || res.statusText || 'Request failed')
+        }
 
         // поддержим оба режима:
         // 1) debug_devices=1 -> { devices:[{id,...,capabilities:[string]}], groups:[...] }

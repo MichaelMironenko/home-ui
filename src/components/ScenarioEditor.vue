@@ -867,9 +867,10 @@ async function scenariosFetch(path, options = {}) {
         json = { raw: text }
     }
     if (!res.ok) {
-        const error = new Error(json?.error || res.statusText || 'Request failed')
+        const error = new Error(json?.error || text || res.statusText || 'Request failed')
         error.status = res.status
         error.data = json
+        error.raw = text
         throw error
     }
     return json

@@ -288,8 +288,20 @@ const apiBase = ref('')
 const apiKey = ref('')
 async function ensureApi() {
     if (apiBase.value) return { api: apiBase.value, key: apiKey.value }
-    const r = await fetch('/config.json')
-    const cfg = await r.json()
+    const res = await fetch('/config.json', { cache: 'no-store' })
+    const text = await res.text()
+    let cfg = null
+    try {
+        cfg = text ? JSON.parse(text) : null
+    } catch {
+        cfg = null
+    }
+    if (!res.ok) {
+        throw new Error(text || `config.json request failed (${res.status})`)
+    }
+    if (!cfg) {
+        throw new Error('config.json пустой')
+    }
     apiBase.value = cfg.api || ''
     apiKey.value = cfg.apiKey || ''
     return { api: apiBase.value, key: apiKey.value }
@@ -332,8 +344,16 @@ async function toggleOnOff() {
             },
             body: JSON.stringify(payload)
         })
-        const data = await res.json().catch(() => ({}))
-        if (!res.ok || data.ok !== true) throw new Error(data.error || `HTTP ${res.status}`)
+        const text = await res.text()
+        let data = null
+        try {
+            data = text ? JSON.parse(text) : null
+        } catch {
+            data = null
+        }
+        if (!res.ok || (data && data.ok === false)) {
+            throw new Error(data?.error || text || `HTTP ${res.status}`)
+        }
     } catch (err) {
         console.error('toggle failed', err)
         // откат UI
