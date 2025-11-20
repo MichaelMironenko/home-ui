@@ -29,7 +29,7 @@ onMounted(async () => {
         </header>
 
     <section class="card" v-if="!loading && apiBase">
-      <DeviceGrid :api-base="apiBase" path="?op=userinfo" />
+      <DeviceGrid :api-base="apiBase" path="/catalog" />
     </section>
     <section class="card" v-else>
       <p>Загрузка списка устройств…</p>

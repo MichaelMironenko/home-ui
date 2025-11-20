@@ -834,9 +834,15 @@ function normalizeScenarioTimeBlock(block, fallbackTime = '18:00') {
 async function loadConfig() {
     try {
         const data = await getConfig()
-        config.scenariosBase = normalizeBase(
-            data.scenariosUrl || data.scenariosURL || data.scenarioUrl || data.scenariosBase || ''
-        )
+        const apiBase =
+            data.api ||
+            data.apiBase ||
+            data.scenariosUrl ||
+            data.scenariosURL ||
+            data.scenarioUrl ||
+            data.scenariosBase ||
+            ''
+        config.scenariosBase = normalizeBase(apiBase)
         config.apiKey = data.apiKey || data['x-api-key'] || data.api_key || ''
     } catch (err) {
         console.warn('Config load failed', err)

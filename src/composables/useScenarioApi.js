@@ -15,7 +15,15 @@ function ensureBaseUrl() {
 export function useScenarioApi() {
     const loadConfig = async () => {
         const raw = await getConfig();
-        routerBase.base = (raw.scenariosUrl || raw.scenariosURL || raw.scenarioUrl || '').replace(/\/+$/, '');
+        const apiBase =
+            raw.api ||
+            raw.apiBase ||
+            raw.scenariosUrl ||
+            raw.scenariosURL ||
+            raw.scenarioUrl ||
+            raw.scenariosBase ||
+            '';
+        routerBase.base = apiBase.replace(/\/+$/, '');
         routerBase.keyHeader = raw.keyHeader || raw['x-api-key-header'] || 'x-api-key';
         routerBase.keyValue = raw.keyValue || raw.apiKey || raw['x-api-key'] || '';
     };

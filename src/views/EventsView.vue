@@ -9,9 +9,6 @@ const error = ref('')
 const events = ref([])
 const catalogDevices = ref({})
 const catalogGroups = ref({})
-const metricsSnapshot = ref(null)
-const metricsLoading = ref(false)
-const metricsError = ref('')
 
 function normalizeBase(url = '') {
   return url.replace(/\/+$/, '')
@@ -20,9 +17,15 @@ function normalizeBase(url = '') {
 async function loadConfig() {
   try {
     const raw = await getConfig()
-    cfg.value.base = normalizeBase(
-      raw.scenariosUrl || raw.scenariosURL || raw.scenarioUrl || raw.scenariosBase || ''
-    )
+    const apiBase =
+      raw.api ||
+      raw.apiBase ||
+      raw.scenariosUrl ||
+      raw.scenariosURL ||
+      raw.scenarioUrl ||
+      raw.scenariosBase ||
+      ''
+    cfg.value.base = normalizeBase(apiBase)
     cfg.value.keyHeader = raw.keyHeader || raw['x-api-key-header'] || 'x-api-key'
     cfg.value.keyValue = raw.keyValue || raw.apiKey || raw['x-api-key'] || ''
   } catch (err) {
@@ -108,10 +111,14 @@ function normalizeEvents(list, maps) {
   const deviceMap = maps?.devices || {}
   const groupMap = maps?.groups || {}
   const mapped = list.map((raw) => {
-    const ts = Number(raw?.ts)
-    const timestamp = Number.isFinite(ts) ? ts : Date.now()
+    const tsSource = raw?.ts || raw?.timestamp || null
+    let timestamp = Date.now()
+    if (tsSource) {
+      const parsed = Date.parse(tsSource)
+      if (!Number.isNaN(parsed)) timestamp = parsed
+    }
     const devicesRaw = Array.isArray(raw?.devices) ? raw.devices.map(formatDevice) : []
-    const presenceStatus = raw?.presence?.status || 'unknown'
+    const presenceStatus = raw?.presenceStatus || raw?.presence?.status || 'unknown'
     const errorText = raw?.error?.message?.trim() || ''
     const result = raw?.result || null
     const isPaused = !!(result && (result.reason === 'manual_pause' || result.pause))
@@ -298,68 +305,15 @@ async function loadEvents() {
 
 const hasEvents = computed(() => events.value.length > 0)
 
-const metricsTotals = computed(() => {
-  return {
-    date: metricsSnapshot.value?.date || '',
-    yandexCalls: Number(metricsSnapshot.value?.yandexCalls) || 0,
-    functionCalls: Number(metricsSnapshot.value?.functionCalls) || 0,
-  }
-})
-
-const yandexBreakdown = computed(() => {
-  const bucket = metricsSnapshot.value?.yandexBreakdown || {}
-  return Object.entries(bucket)
-    .map(([key, value]) => ({
-      key,
-      label: key,
-      count: Number(value) || 0,
-    }))
-    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
-})
-
-const functionBreakdownMetrics = computed(() => {
-  const bucket = metricsSnapshot.value?.functionBreakdown || {}
-  return Object.entries(bucket)
-    .map(([key, value]) => ({
-      key,
-      label: key,
-      count: Number(value) || 0,
-    }))
-    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
-})
-
-async function loadMetrics() {
-  if (!cfg.value.base) return
-  metricsLoading.value = true
-  metricsError.value = ''
-  try {
-    const data = await apiFetch('/metrics')
-    metricsSnapshot.value = {
-      date: data?.date || '',
-      yandexCalls: Number(data?.yandexCalls) || 0,
-      functionCalls: Number(data?.functionCalls) || 0,
-      yandexBreakdown: data?.yandexBreakdown || {},
-      functionBreakdown: data?.functionBreakdown || {},
-    }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    metricsError.value = `Ошибка загрузки статистики: ${message}`
-  } finally {
-    metricsLoading.value = false
-  }
-}
-
 onMounted(async () => {
   await loadConfig()
   if (cfg.value.base) {
     await loadCatalog()
-    await loadMetrics()
     await loadEvents()
   }
 })
 
 async function refreshAll() {
-  await loadMetrics()
   await loadEvents()
 }
 </script>
@@ -371,53 +325,10 @@ async function refreshAll() {
         <h1>История событий</h1>
         <p class="subtitle">Запуски сценариев за последние 12 часов</p>
       </div>
-      <button class="secondary" type="button" @click="refreshAll" :disabled="loading || metricsLoading">
+      <button class="secondary" type="button" @click="refreshAll" :disabled="loading">
         Обновить
       </button>
     </header>
-
-    <section class="panel metrics-panel" v-if="metricsLoading || metricsError || metricsSnapshot">
-      <header class="metrics-head">
-        <div>
-          <h2>Статистика запросов</h2>
-          <p class="metrics-subtitle" v-if="metricsTotals.date">За {{ metricsTotals.date }}</p>
-        </div>
-        <div class="metrics-summary" v-if="metricsSnapshot && !metricsLoading">
-          <span class="summary-item">
-            <span class="summary-label">Yandex API</span>
-            <span class="summary-value">{{ metricsTotals.yandexCalls }}</span>
-          </span>
-          <span class="summary-item">
-            <span class="summary-label">Наши функции</span>
-            <span class="summary-value">{{ metricsTotals.functionCalls }}</span>
-          </span>
-        </div>
-      </header>
-      <p v-if="metricsLoading" class="metrics-note">Обновляем статистику…</p>
-      <p v-else-if="metricsError" class="metrics-note error">{{ metricsError }}</p>
-      <div v-else class="metrics-sections">
-        <section class="metrics-subsection">
-          <h3 class="metrics-subheading">Yandex API</h3>
-          <p v-if="!yandexBreakdown.length" class="metrics-note">Пока нет обращений к Yandex API.</p>
-          <ul v-else class="metrics-list">
-            <li v-for="entry in yandexBreakdown" :key="entry.key" class="metrics-row">
-              <span class="row-label">{{ entry.label }}</span>
-              <span class="row-value">{{ entry.count }}</span>
-            </li>
-          </ul>
-        </section>
-        <section class="metrics-subsection">
-          <h3 class="metrics-subheading">Функция</h3>
-          <p v-if="!functionBreakdownMetrics.length" class="metrics-note">Вызовов функции пока нет.</p>
-          <ul v-else class="metrics-list">
-            <li v-for="entry in functionBreakdownMetrics" :key="entry.key" class="metrics-row">
-              <span class="row-label">{{ entry.label }}</span>
-              <span class="row-value">{{ entry.count }}</span>
-            </li>
-          </ul>
-        </section>
-      </div>
-    </section>
 
     <section class="panel" v-if="loading && !hasEvents">
       <p>Загрузка истории…</p>

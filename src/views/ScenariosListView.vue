@@ -11,10 +11,22 @@ const error = ref('')
 const scenarios = ref([])
 const toggling = ref({})
 
+function normalizeBase(raw = '') {
+  return raw.replace(/\/+$/, '')
+}
+
 async function loadConfig() {
   try {
     const raw = await getConfig()
-    cfg.value.base = (raw.scenariosUrl || raw.scenariosURL || raw.scenarioUrl || '').replace(/\/+$/, '')
+    const apiBase =
+      raw.api ||
+      raw.apiBase ||
+      raw.scenariosUrl ||
+      raw.scenariosURL ||
+      raw.scenarioUrl ||
+      raw.scenariosBase ||
+      ''
+    cfg.value.base = normalizeBase(apiBase)
     cfg.value.keyHeader = raw.keyHeader || raw['x-api-key-header'] || 'x-api-key'
     cfg.value.keyValue = raw.keyValue || raw.apiKey || raw['x-api-key'] || ''
   } catch (err) {
