@@ -7,6 +7,7 @@ import ScenariosListView from './views/ScenariosListView.vue'
 import ScenarioView from './views/ScenarioView.vue'
 import AutoLightScenarioView from './views/AutoLightScenarioView.vue'
 import EventsView from './views/EventsView.vue'
+import ScenarioDialPlaygroundView from './views/ScenarioDialPlaygroundView.vue'
 import NotFoundView from './views/NotFoundView.vue'
 import LoginView from './views/LoginView.vue'
 import { useAuth } from './composables/useAuth'
@@ -21,6 +22,7 @@ const router = createRouter({
     { path: '/auto-light/new', name: 'auto-light-create', component: AutoLightScenarioView },
     { path: '/auto-light/:id', name: 'auto-light-edit', component: AutoLightScenarioView, props: true },
     { path: '/events', name: 'events', component: EventsView },
+    { path: '/scenario-dial', name: 'scenario-dial-playground', component: ScenarioDialPlaygroundView },
     { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
     { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFoundView }
   ]

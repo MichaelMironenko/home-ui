@@ -61,6 +61,11 @@ function formatTime(ts) {
   return `${toTwo(date.getHours())}:${toTwo(date.getMinutes())}:${toTwo(date.getSeconds())}`
 }
 
+function formatTriggerLabel(origin) {
+  if (!origin) return ''
+  return ORIGIN_LABELS[origin] || origin
+}
+
 const ORIGIN_LABELS = {
   manual: 'Ручной запуск',
   'manual-batch': 'Ручной пакет',
@@ -111,21 +116,18 @@ function normalizeEvents(list, maps) {
   const deviceMap = maps?.devices || {}
   const groupMap = maps?.groups || {}
   const mapped = list.map((raw) => {
-    const tsSource = raw?.ts || raw?.timestamp || null
-    let timestamp = Date.now()
-    if (tsSource) {
-      const parsed = Date.parse(tsSource)
-      if (!Number.isNaN(parsed)) timestamp = parsed
-    }
-    const devicesRaw = Array.isArray(raw?.devices) ? raw.devices.map(formatDevice) : []
-    const presenceStatus = raw?.presenceStatus || raw?.presence?.status || 'unknown'
-    const errorText = raw?.error?.message?.trim() || ''
-    const result = raw?.result || null
-    const isPaused = !!(result && (result.reason === 'manual_pause' || result.pause))
+    if (!raw || typeof raw !== 'object') return null
+    const tsSource = raw.ts || raw.timestamp || raw.timeText || null
+    const parsedTs = tsSource ? Date.parse(tsSource) : NaN
+    const timestamp = Number.isNaN(parsedTs) ? Date.now() : parsedTs
+    const devicesRaw = Array.isArray(raw.devices) ? raw.devices.map(formatDevice) : []
+    const presenceStatus = raw.presenceStatus || 'unknown'
+    const status = raw.status || {}
+    const isPaused = !!status.pause
     const statusText = isPaused
       ? 'Пауза'
-      : (result?.throttled ? 'Отложено по rate-limit'
-        : (result?.reason && result.reason !== 'manual_pause' ? result.reason : ''))
+      : (status.throttled ? 'Отложено по rate-limit'
+        : (status.reason && status.reason !== 'manual_pause' ? status.reason : ''))
 
     const targetGroups = Array.isArray(raw?.target?.groups) ? raw.target.groups.map((id) => ({
       id,
@@ -136,7 +138,7 @@ function normalizeEvents(list, maps) {
       name: deviceMap[id] || id,
     })) : []
 
-    const showDeviceDetails = targetGroups.length === 0 || Boolean(errorText)
+    const showDeviceDetails = targetGroups.length === 0
 
     const brightnessValues = devicesRaw
       .map((d) => Number.isFinite(d.brightness) ? Math.round(d.brightness) : null)
@@ -179,39 +181,10 @@ function normalizeEvents(list, maps) {
       }
     }
 
-    const requestCounts = {}
-    const rawRequests = Array.isArray(raw?.requests) ? raw.requests : []
-    for (const req of rawRequests) {
-      const kind = typeof req === 'string'
-        ? req
-        : (req && typeof req.kind === 'string' ? req.kind : '')
-      if (!kind) continue
-      requestCounts[kind] = (requestCounts[kind] || 0) + 1
-    }
-    const requestSummary = Object.entries(requestCounts)
-      .map(([kind, count]) => ({ kind, count }))
-      .sort((a, b) => b.count - a.count || a.kind.localeCompare(b.kind))
-    const metrics = raw?.metrics || null
-    if (metrics?.brightness) {
-      if (Number.isFinite(metrics.brightness.single)) {
-        brightnessDisplay = `${metrics.brightness.single}%`
-      } else if (Number.isFinite(metrics.brightness.min) && Number.isFinite(metrics.brightness.max)) {
-        brightnessDisplay = `${metrics.brightness.min}–${metrics.brightness.max}%`
-      }
-    }
-    if (metrics?.temperature) {
-      if (Number.isFinite(metrics.temperature.single)) {
-        colorHexDisplay = null
-        colorLabel = `${metrics.temperature.single}K`
-      } else if (Number.isFinite(metrics.temperature.min) && Number.isFinite(metrics.temperature.max)) {
-        colorHexDisplay = null
-        colorLabel = `${metrics.temperature.min}–${metrics.temperature.max}K`
-      }
-    }
     let nextRunText = ''
-    if (raw?.schedule?.nextRun) {
+    if (status.nextRunUtc) {
       try {
-        const dt = new Date(raw.schedule.nextRun)
+        const dt = new Date(status.nextRunUtc)
         nextRunText = dt.toLocaleString('ru-RU', {
           hour: '2-digit',
           minute: '2-digit',
@@ -219,51 +192,43 @@ function normalizeEvents(list, maps) {
           month: '2-digit'
         })
       } catch (_) {
-        nextRunText = raw.schedule.nextRun
+        nextRunText = status.nextRunUtc
       }
     }
     let nextRequestText = ''
-    if (raw?.schedule?.nextRequest) {
+    if (status.nextRequestUtc) {
       try {
-        const dt = new Date(raw.schedule.nextRequest)
+        const dt = new Date(status.nextRequestUtc)
         nextRequestText = dt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
       } catch (_) {
-        nextRequestText = raw.schedule.nextRequest
+        nextRequestText = status.nextRequestUtc
       }
     }
-    const functionSummary = Array.isArray(raw?.functionLog) ? raw.functionLog.reduce((acc, entry) => {
-      const key = entry?.reason || 'unknown'
-      acc[key] = (acc[key] || 0) + 1
-      return acc
-    }, {}) : {}
-    const functionBreakdown = Object.entries(functionSummary)
-      .map(([reason, count]) => ({ reason, count }))
-      .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason))
 
     return {
       id: raw?.id || `evt_${timestamp}`,
       timestamp,
       timeText: formatTime(timestamp),
       scenarioName: raw?.scenarioName || raw?.scenarioId || 'Без имени',
-      originLabel: ORIGIN_LABELS[raw?.origin] || '',
+      triggerLabel: formatTriggerLabel(raw?.origin),
       targetGroups,
       targetDevices,
       devices: devicesRaw,
       showDeviceDetails,
       presenceLabel: PRESENCE_LABELS[presenceStatus] || PRESENCE_LABELS.unknown,
       statusText,
-      errorText,
       isPaused,
       brightnessDisplay,
       colorLabel,
       colorHexDisplay,
-      requestSummary,
+      requestSummary: Array.isArray(raw?.requestSummary) ? raw.requestSummary : [],
       nextRunText,
       nextRequestText,
-      functionBreakdown,
+      functionBreakdown: Array.isArray(raw?.functionBreakdown) ? raw.functionBreakdown : [],
+      sensorLux: Number.isFinite(raw?.sensorLux) ? Math.round(raw.sensorLux) : null,
     }
   })
-  return mapped.sort((a, b) => b.timestamp - a.timestamp)
+  return mapped.filter(Boolean).sort((a, b) => b.timestamp - a.timestamp)
 }
 
 async function loadCatalog() {
@@ -343,7 +308,7 @@ async function refreshAll() {
       <article v-for="event in events" :key="event.id" class="event-card">
         <header class="event-head">
           <span class="event-time">{{ event.timeText }}</span>
-          <span class="event-origin" v-if="event.originLabel">{{ event.originLabel }}</span>
+          <span class="event-trigger" v-if="event.triggerLabel">{{ event.triggerLabel }}</span>
         </header>
         <div class="event-name">{{ event.scenarioName }}</div>
         <div class="event-target" v-if="event.targetGroups.length">
@@ -352,7 +317,7 @@ async function refreshAll() {
         <div class="event-target" v-else-if="event.targetDevices.length && !event.showDeviceDetails">
           <span class="target-chip" v-for="device in event.targetDevices" :key="device.id">{{ device.name }}</span>
         </div>
-        <div class="event-metrics" v-if="event.brightnessDisplay || event.colorLabel">
+        <div class="event-metrics" v-if="event.brightnessDisplay || event.colorLabel || event.sensorLux != null">
           <span v-if="event.brightnessDisplay" class="metric">
             <span class="metric-label">Яркость</span>
             <span class="metric-value">{{ event.brightnessDisplay }}</span>
@@ -363,6 +328,10 @@ async function refreshAll() {
               <span v-if="event.colorHexDisplay" class="metric-dot" :style="{ backgroundColor: event.colorHexDisplay }" />
               {{ event.colorLabel }}
             </span>
+          </span>
+          <span v-if="event.sensorLux != null" class="metric">
+            <span class="metric-label">Датчик</span>
+            <span class="metric-value">{{ event.sensorLux }} lx</span>
           </span>
         </div>
         <div class="event-devices" v-if="event.showDeviceDetails && event.devices.length">
@@ -382,25 +351,6 @@ async function refreshAll() {
               <span class="requests-count">{{ req.count }}</span>
             </li>
           </ul>
-        </div>
-        <div class="event-functions" v-if="event.functionBreakdown && event.functionBreakdown.length">
-          <div class="requests-title">Вызовы функции</div>
-          <ul class="requests-list">
-            <li v-for="fn in event.functionBreakdown" :key="fn.reason" class="requests-row">
-              <span class="requests-kind">{{ fn.reason }}</span>
-              <span class="requests-count">{{ fn.count }}</span>
-            </li>
-          </ul>
-        </div>
-        <div class="event-next-run" v-if="event.nextRunText || event.nextRequestText">
-          <div v-if="event.nextRunText">
-            <span class="next-run-label">Следующее окно:</span>
-            <span class="next-run-value">{{ event.nextRunText }}</span>
-          </div>
-          <div v-if="event.nextRequestText">
-            <span class="next-run-label">Следующий запрос:</span>
-            <span class="next-run-value">{{ event.nextRequestText }}</span>
-          </div>
         </div>
         <footer class="event-foot">
           <span class="presence">Присутствие: {{ event.presenceLabel }}</span>
@@ -601,7 +551,7 @@ async function refreshAll() {
 .event-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   font-size: 12px;
   color: #94a3b8;
 }
@@ -612,13 +562,19 @@ async function refreshAll() {
   color: #cbd5f5;
 }
 
-.event-origin {
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: rgba(59, 130, 246, 0.08);
-  border: 1px solid rgba(59, 130, 246, 0.25);
-  color: #60a5fa;
+.event-trigger {
+  color: #94a3b8;
   font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.event-trigger::before {
+  content: '·';
+  color: #475569;
   font-weight: 600;
 }
 
@@ -729,36 +685,6 @@ async function refreshAll() {
 .requests-count {
   font-weight: 600;
   color: #38bdf8;
-}
-
-.event-functions {
-  border-top: 1px solid rgba(148, 163, 184, 0.15);
-  padding-top: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.event-next-run {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-  color: #94a3b8;
-}
-
-.event-next-run > div {
-  display: flex;
-  gap: 6px;
-}
-
-.next-run-label {
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.next-run-value {
-  color: #f8fafc;
 }
 
 .device-chip {
