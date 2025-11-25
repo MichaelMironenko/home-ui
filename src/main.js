@@ -5,11 +5,12 @@ import App from './App.vue'
 import HomeView from './views/HomeView.vue'
 import ScenariosListView from './views/ScenariosListView.vue'
 import ScenarioView from './views/ScenarioView.vue'
+import ScenarioLegacyView from './views/ScenarioLegacyView.vue'
 import AutoLightScenarioView from './views/AutoLightScenarioView.vue'
 import EventsView from './views/EventsView.vue'
-import ScenarioDialPlaygroundView from './views/ScenarioDialPlaygroundView.vue'
 import NotFoundView from './views/NotFoundView.vue'
 import LoginView from './views/LoginView.vue'
+import ProfileView from './views/ProfileView.vue'
 import { useAuth } from './composables/useAuth'
 
 const router = createRouter({
@@ -19,10 +20,12 @@ const router = createRouter({
     { path: '/scenarios', name: 'scenarios-list', component: ScenariosListView },
     { path: '/scenarios/new', name: 'scenario-create', component: ScenarioView },
     { path: '/scenarios/:id', name: 'scenario-edit', component: ScenarioView, props: true },
+    { path: '/legacy-scenarios/new', name: 'scenario-create-legacy', component: ScenarioLegacyView },
+    { path: '/legacy-scenarios/:id', name: 'scenario-edit-legacy', component: ScenarioLegacyView, props: true },
     { path: '/auto-light/new', name: 'auto-light-create', component: AutoLightScenarioView },
     { path: '/auto-light/:id', name: 'auto-light-edit', component: AutoLightScenarioView, props: true },
+    { path: '/profile', name: 'profile', component: ProfileView },
     { path: '/events', name: 'events', component: EventsView },
-    { path: '/scenario-dial', name: 'scenario-dial-playground', component: ScenarioDialPlaygroundView },
     { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
     { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFoundView }
   ]

@@ -1,28 +1,14 @@
 import { ref } from 'vue'
-import { getConfig } from '../lib/api'
+import { ensureApiBase } from '../utils/apiBase'
 
 const user = ref(null)
 const ready = ref(false)
-let baseUrl = ''
 let initPromise = null
 
 const headersJson = { Accept: 'application/json' }
 
-function resolveBase(raw) {
-  return (raw || '').replace(/\/+$/, '')
-}
-
-async function ensureBaseUrl() {
-  if (baseUrl) return baseUrl
-  const cfg = await getConfig()
-  const base = resolveBase(cfg.scenariosURL || cfg.scenariosUrl || cfg.scenarioUrl || cfg.scenariosBase || '')
-  if (!base) throw new Error('scenariosURL не задан в config.json')
-  baseUrl = base
-  return baseUrl
-}
-
 async function fetchSession() {
-  const base = await ensureBaseUrl()
+  const base = await ensureApiBase()
   const res = await fetch(`${base}/auth/me`, {
     method: 'GET',
     credentials: 'include',
@@ -61,7 +47,7 @@ async function ensureSession(force = false) {
 }
 
 async function login(redirectTarget) {
-  const base = await ensureBaseUrl()
+  const base = await ensureApiBase()
   const target = typeof redirectTarget === 'string' && redirectTarget.length
     ? redirectTarget
     : window.location.href
@@ -69,7 +55,7 @@ async function login(redirectTarget) {
 }
 
 async function logout() {
-  const base = await ensureBaseUrl()
+  const base = await ensureApiBase()
   try {
     const res = await fetch(`${base}/auth/logout`, {
       method: 'POST',

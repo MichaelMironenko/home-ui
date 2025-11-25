@@ -1,32 +1,34 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { trackYandexCall } from '../lib/requestMetrics'
+import { ensureApiBase } from '../utils/apiBase'
+import { getConfig } from '../lib/api'
 
 const props = defineProps({
     device: { type: Object, required: true },
-    roomsById: { type: Object, default: () => ({}) },
     entityType: { type: String, default: 'device' }
 })
 
 const entityType = computed(() => props.entityType || props.device?.entityType || 'device')
 const isGroup = computed(() => entityType.value === 'group')
 
-const roomName = computed(() => {
-    if (isGroup.value) return 'Группа'
-    return props.roomsById[props.device.room]?.name || '—'
+const entityKind = computed(() => {
+    const typeHint = String(props.device?.type || props.device?.deviceType || props.device?.kind || props.device?.icon || '')
+        .toLowerCase()
+    if (typeHint.includes('sensor') || typeHint.includes('illumination')) return 'sensor'
+    if (typeHint.includes('speaker') || typeHint.includes('media_device')) return 'speaker'
+    if (typeHint.includes('switch')) return 'switch'
+    if (typeHint.includes('humidifier')) return 'humidifier'
+    if (typeHint.includes('light') || typeHint.includes('lamp') || typeHint.includes('bulb')) return 'light'
+    return 'default'
 })
 
-const emoji = computed(() => {
-    if (isGroup.value) return '👥'
-    const t = props.device?.type || ''
-    if (!t) return '❓'
-    if (t.includes('light')) return '💡'
-    if (t.includes('speaker') || t.includes('media_device')) return '🔊'
-    if (t.includes('sensor')) return '📟'
-    if (t.includes('switch')) return '🔌'
-    if (t.includes('humidifier')) return '💧'
-    return '📦'
+const hasMotionProperty = computed(() => {
+    const propsArr = props.device?.properties || []
+    return propsArr.some(prop => prop?.parameters?.instance === 'motion')
 })
+
+const sensorEmoji = computed(() => (hasMotionProperty.value ? '🚶' : '📟'))
 
 const capType = (cap) => (cap ? (typeof cap === 'string' ? cap : cap.type || '') : '')
 
@@ -98,6 +100,38 @@ const hsvToHex = (h, s, v) => {
     const g = (gp + m) * 255
     const b = (bp + m) * 255
     return rgbToHex(r, g, b)
+}
+
+const kelvinToHex = (kelvin) => {
+    if (typeof kelvin !== 'number' || !Number.isFinite(kelvin)) return ''
+    const temp = Math.max(1000, Math.min(40000, kelvin)) / 100
+    let red = 0
+    let green = 0
+    let blue = 0
+    if (temp <= 66) {
+        red = 255
+        green = clamp255(99.4708025861 * Math.log(temp) - 161.1195681661)
+        blue = temp <= 19 ? 0 : clamp255(138.5177312231 * Math.log(temp - 10) - 305.0447927307)
+    } else {
+        red = clamp255(329.698727446 * Math.pow(temp - 60, -0.1332047592))
+        green = clamp255(288.1221695283 * Math.pow(temp - 60, -0.0755148492))
+        blue = 255
+    }
+    return rgbToHex(red, green, blue)
+}
+
+const getBrightnessFromCaps = (caps = []) => {
+    for (const cap of caps) {
+        const type = capType(cap)
+        if (!type.includes('range')) continue
+        const instance = cap?.state?.instance || cap?.parameters?.instance
+        if (instance !== 'brightness') continue
+        const value = cap?.state?.value
+        if (typeof value === 'number') {
+            return Math.round(Math.max(0, Math.min(100, value)))
+        }
+    }
+    return null
 }
 
 const formatNumericValue = (value, instance, unit) => {
@@ -174,44 +208,147 @@ const formatColorCapability = (cap) => {
     return ''
 }
 
-const statusText = computed(() => {
-    const caps = props.device?.capabilities || []
-    const propsArr = props.device?.properties || []
+const normalizeHex = (color) => {
+    if (!color) return null
+    const clean = String(color).trim()
+    const normalized = clean.startsWith('#') ? clean.slice(1) : clean
+    if (!/^([0-9A-Fa-f]{6})$/.test(normalized)) return null
+    return `#${normalized.toUpperCase()}`
+}
 
-    const onCap = caps.find(c => capType(c).includes('on_off'))
-    if (onCap && onCap.state) {
-        const on = onCap.state.value
-        let text = on === true ? 'On' : on === false ? 'Off' : 'Unknown'
-        const rangeCap = caps.find(c =>
-            capType(c).includes('range') &&
-            (c.state?.instance === 'brightness' || c.parameters?.instance === 'brightness')
-        )
-        const brightness = rangeCap?.state?.value
-        if (typeof brightness === 'number') text += ` • ${brightness}%`
-        return text
+const extractColorInfo = (caps = []) => {
+    const cap = caps.find(c => capType(c).includes('color_setting'))
+    if (!cap) return null
+    const state = cap.state || {}
+    const value = state.value
+    if (value == null) return null
+
+    if (typeof value === 'object') {
+        if (Number.isFinite(value.temperature_k)) {
+            return { type: 'kelvin', value: Math.round(value.temperature_k) }
+        }
+        if (Number.isFinite(value.temperature)) {
+            return { type: 'kelvin', value: Math.round(value.temperature) }
+        }
+        if (typeof value.r === 'number' && typeof value.g === 'number' && typeof value.b === 'number') {
+            return { type: 'hex', value: rgbToHex(value.r, value.g, value.b) }
+        }
+        if (typeof value.h === 'number' && typeof value.s === 'number' && typeof value.v === 'number') {
+            const hex = hsvToHex(value.h, value.s, value.v)
+            return hex ? { type: 'hex', value: hex } : null
+        }
+        if (typeof value.int === 'number') {
+            const int = value.int
+            const r = (int >> 16) & 0xff
+            const g = (int >> 8) & 0xff
+            const b = int & 0xff
+            return { type: 'hex', value: rgbToHex(r, g, b) }
+        }
     }
+    if (typeof value === 'number') {
+        const instance = state.instance || cap.parameters?.instance
+        if (instance === 'temperature_k' || instance === 'temperature') {
+            return { type: 'kelvin', value: Math.round(value) }
+        }
+        if (instance === 'rgb' || instance === 'color') {
+            const int = Math.round(value)
+            const r = (int >> 16) & 0xff
+            const g = (int >> 8) & 0xff
+            const b = int & 0xff
+            return { type: 'hex', value: rgbToHex(r, g, b) }
+        }
+    }
+    if (typeof value === 'string') {
+        const hex = normalizeHex(value)
+        return hex ? { type: 'hex', value: hex } : null
+    }
+    return null
+}
 
-    const motionProp = propsArr.find(p => p.parameters?.instance === 'motion' && p.state?.value)
-    if (motionProp) return String(motionProp.state.value)
-
-    const battery = propsArr.find(p => p.parameters?.instance === 'battery_level' && p.state?.value != null)
-    if (battery) return `${battery.state.value}%`
-
-    const illum = propsArr.find(p => p.parameters?.instance === 'illumination' && p.state?.value != null)
-    if (illum) return `${illum.state.value} lx`
-
-    const temp = propsArr.find(p => p.parameters?.instance === 'temperature' && p.state?.value != null)
-    if (temp) return `${temp.state.value}°C`
-
-    return '—'
+const sensorIllumination = computed(() => {
+    const propsArr = props.device?.properties || []
+    const illum = propsArr.find(p => p.parameters?.instance === 'illumination')
+    if (illum && typeof illum.state?.value === 'number') {
+        return Math.round(illum.state.value)
+    }
+    return null
 })
 
-const statusClass = computed(() => {
-    const t = statusText.value
-    if (t === 'On' || (t.startsWith('On') && t.includes('•'))) return 'status-on'
-    if (t === 'Off') return 'status-off'
-    if (t === '—' || t === 'Unknown') return 'status-unknown'
-    return 'status-neutral'
+const illuminationText = computed(() => {
+    if (sensorIllumination.value == null) return ''
+    return `${sensorIllumination.value} лк`
+})
+
+const isSensorDevice = computed(() => entityKind.value === 'sensor' || sensorIllumination.value != null)
+
+const consistentValue = (values) => {
+    if (!values.length) return null
+    const first = values[0]
+    return values.every(value => value === first) ? first : null
+}
+
+const memberDevices = computed(() => {
+    return Array.isArray(props.device?.memberDevices) ? props.device.memberDevices : []
+})
+
+const groupColorInfo = computed(() => {
+    if (!isGroup.value) return null
+    const colors = memberDevices.value
+        .map(member => extractColorInfo(member?.capabilities || []))
+        .filter(Boolean)
+    if (!colors.length) return null
+    const first = colors[0]
+    const consistent = colors.every(info => info.type === first.type && info.value === first.value)
+    return consistent ? first : null
+})
+
+const groupBrightness = computed(() => {
+    if (!isGroup.value) return null
+    const values = memberDevices.value
+        .map(member => getBrightnessFromCaps(member?.capabilities || []))
+        .filter(value => typeof value === 'number')
+    return consistentValue(values)
+})
+
+const groupStatus = computed(() => {
+    if (!isGroup.value) return null
+    const color = groupColorInfo.value
+    const brightness = groupBrightness.value
+    if (color?.type === 'kelvin') {
+        return brightness != null ? `${color.value}К - ${brightness}%` : `${color.value}К`
+    }
+    if (color?.type === 'hex') {
+        return brightness != null ? `${brightness}%` : ''
+    }
+    if (brightness != null) {
+        return `${brightness}%`
+    }
+    return null
+})
+
+const statusRowText = computed(() => {
+    if (isGroup.value) {
+        return groupStatus.value || ''
+    }
+    if (!hasOnOffCap.value && illuminationText.value) {
+        return illuminationText.value
+    }
+    return ''
+})
+
+const statusDotColor = computed(() => {
+    if (!isGroup.value) return ''
+    const color = groupColorInfo.value
+    if (!color) return ''
+    if (color.type === 'hex') return color.value
+    return kelvinToHex(color.value)
+})
+
+const showStatusRow = computed(() => {
+    if (isGroup.value) {
+        return Boolean(groupStatus.value)
+    }
+    return !hasOnOffCap.value && Boolean(illuminationText.value)
 })
 
 const detailItems = computed(() => {
@@ -223,6 +360,12 @@ const detailItems = computed(() => {
         const value = prop?.state?.value
         const formatted = formatPropertyValue(value, { instance, unit: prop?.parameters?.unit })
         if (formatted) {
+            if (
+                isSensorDevice.value &&
+                (instance === 'battery_level' || instance === 'illumination' || instance === 'motion')
+            ) {
+                return
+            }
             const label = labelForInstance(instance)
             items.push(label ? `${label}: ${formatted}` : formatted)
             if (instance) seen.add(instance)
@@ -237,11 +380,15 @@ const detailItems = computed(() => {
         if (type.includes('range')) {
             const instance = cap?.state?.instance || cap?.parameters?.instance
             const formatted = formatPropertyValue(cap?.state?.value, { instance, unit: cap?.parameters?.unit })
-            if (formatted && (!instance || !seen.has(instance))) {
+        if (formatted && (!instance || !seen.has(instance))) {
+            if (instance === 'brightness') {
+                items.push(formatted)
+            } else {
                 const label = labelForInstance(instance)
                 items.push(label ? `${label}: ${formatted}` : formatted)
-                if (instance) seen.add(instance)
             }
+            if (instance) seen.add(instance)
+        }
             return
         }
 
@@ -260,10 +407,6 @@ const detailItems = computed(() => {
             }
         }
     })
-
-    if (!items.length && statusText.value && statusText.value !== '—') {
-        items.push(statusText.value)
-    }
 
     return items
 })
@@ -286,23 +429,29 @@ watch(onCapState, v => { localOn.value = v })
 // загрузим api (и опционально apiKey) из /config.json
 const apiBase = ref('')
 const apiKey = ref('')
+
+const looksAbsoluteUrl = (value) => /^https?:\/\//i.test(value || '') || String(value || '').startsWith('//')
+const trimTrailingSlash = (value) => String(value || '').replace(/\/+$/, '')
+
 async function ensureApi() {
     if (apiBase.value) return { api: apiBase.value, key: apiKey.value }
-    const res = await fetch('/config.json', { cache: 'no-store' })
-    const text = await res.text()
-    let cfg = null
+    const cfg = await getConfig()
+    let fallbackBase = ''
     try {
-        cfg = text ? JSON.parse(text) : null
-    } catch {
-        cfg = null
+        fallbackBase = await ensureApiBase()
+    } catch (err) {
+        console.warn('[device-card] ensureApiBase failed', err)
     }
-    if (!res.ok) {
-        throw new Error(text || `config.json request failed (${res.status})`)
+    const directApi = typeof cfg.api === 'string' ? cfg.api.trim() : ''
+    if (looksAbsoluteUrl(directApi)) {
+        apiBase.value = trimTrailingSlash(directApi)
+    } else if (fallbackBase) {
+        apiBase.value = trimTrailingSlash(fallbackBase)
+    } else if (directApi) {
+        apiBase.value = trimTrailingSlash(directApi)
+    } else {
+        apiBase.value = '/api'
     }
-    if (!cfg) {
-        throw new Error('config.json пустой')
-    }
-    apiBase.value = cfg.api || ''
     apiKey.value = cfg.apiKey || ''
     return { api: apiBase.value, key: apiKey.value }
 }
@@ -332,7 +481,8 @@ async function toggleOnOff() {
             : {
                 op: 'set_device',
                 id: props.device.id,
-                on: desired
+                on: desired,
+                capabilityType: onCapType
             }
 
         trackYandexCall()
@@ -367,30 +517,26 @@ async function toggleOnOff() {
 <template>
     <div class="card compact">
         <div class="row">
-            <div class="emoji" aria-hidden="true">{{ emoji }}</div>
+            <div v-if="isSensorDevice" class="sensor-emoji" aria-hidden="true">{{ sensorEmoji }}</div>
+            <div v-else class="icon" :class="{ 'icon-group': isGroup }" aria-hidden="true">
+                <span class="lamp-emoji">💡</span>
+                <span v-if="isGroup" class="lamp-emoji lamp-overlay">💡</span>
+            </div>
             <div class="main">
                 <div class="title-row">
                     <div class="title">{{ device.name || 'Unnamed device' }}</div>
-                    <div v-if="roomName && roomName !== '—'" class="room-tag">{{ roomName }}</div>
                 </div>
-                <div class="details" :class="{ empty: !detailLine }">
-                    {{ detailLine || '—' }}
+                <div v-if="showStatusRow" class="status-row" :class="{ 'has-dot': statusDotColor }">
+                    <span v-if="statusDotColor" class="status-dot" :style="{ background: statusDotColor }"></span>
+                    <span class="status-text">{{ statusRowText }}</span>
                 </div>
+                <div v-if="detailLine" class="details">{{ detailLine }}</div>
             </div>
-
-            <!-- SHOW ON/OFF BUTTON WHEN CAPABLE -->
             <div v-if="hasOnOffCap" class="side-control">
-                <button class="toggle" :class="{ on: localOn, loading: loading }" @click="toggleOnOff"
+                <button class="toggle card-toggle" :class="{ on: localOn, loading: loading }" @click="toggleOnOff"
                     :disabled="loading">
-                    <span class="dot" aria-hidden="true"></span>
-                    <span class="label">{{ localOn ? 'On' : 'Off' }}</span>
+                    <span class="power-symbol" aria-hidden="true">⏻</span>
                 </button>
-            </div>
-
-            <!-- status text (kept for other sensors) -->
-            <div v-else class="status side-status" :class="statusClass">
-                <span class="dot" aria-hidden="true"></span>
-                <span class="status-text">{{ statusText }}</span>
             </div>
         </div>
     </div>
@@ -398,33 +544,62 @@ async function toggleOnOff() {
 
 <style scoped>
 .card {
-    background: #fff;
-    border: 1px solid #e6e8eb;
+    background: #0f172a;
+    color: #e2e8f0;
+    border: 1px solid #1f2937;
     border-radius: 12px;
-    padding: 14px;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, .04);
+    padding: 10px 12px;
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.25);
 }
 
 .card.compact {
-    padding: 10px 12px;
     display: flex;
     align-items: stretch;
 }
 
 .row {
     display: flex;
-    align-items: stretch;
+    align-items: center;
     gap: 12px;
     width: 100%;
 }
 
-.emoji {
-    font-size: 28px;
-    line-height: 1;
-    width: 36px;
+.icon {
+    width: 48px;
+    height: 48px;
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
+}
+
+.sensor-emoji {
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    border-radius: 12px;
+    border: 1px solid #1f2937;
+    background: rgba(255, 255, 255, 0.02);
+    color: #e2e8f0;
+}
+
+.icon-group .lamp-emoji {
+    transform: translateX(-6px);
+}
+
+.lamp-emoji {
+    font-size: 30px;
+    line-height: 1;
+}
+
+.lamp-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform: translateX(18px);
 }
 
 .main {
@@ -432,7 +607,7 @@ async function toggleOnOff() {
     display: flex;
     flex-direction: column;
     justify-content: center;
-    gap: 4px;
+    gap: 6px;
     min-width: 0;
 }
 
@@ -440,128 +615,84 @@ async function toggleOnOff() {
     display: flex;
     align-items: center;
     gap: 8px;
-    flex-wrap: wrap;
 }
 
 .title {
     font-weight: 600;
     margin: 0;
     font-size: 14px;
-    color: #111;
+    color: #e2e8f0;
 }
 
-.room-tag {
-    font-size: 11px;
-    color: #4b5563;
-    background: #f3f4f6;
-    border-radius: 999px;
-    padding: 2px 8px;
-    line-height: 1.4;
+.status-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #94a3b8;
+}
+
+.status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 1px solid rgba(226, 232, 240, 0.4);
+    display: inline-block;
 }
 
 .details {
     font-size: 12px;
-    color: #4b5563;
+    color: #cbd5f5;
     line-height: 1.4;
     min-height: 16px;
     word-break: break-word;
 }
 
-.details.empty {
-    color: #9ca3af;
-}
-
-.status {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    color: #444;
-}
-
-.status .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    display: inline-block;
-    background: #ccc;
-    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.03) inset;
-}
-
-.status-on .dot {
-    background: #16a34a;
-}
-
-.status-off .dot {
-    background: #9ca3af;
-}
-
-.status-unknown .dot {
-    background: #f59e0b;
-}
-
-.status-neutral .dot {
-    background: #6b7280;
-}
-
-.side-control,
-.side-status {
-    align-self: stretch;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
 .side-control {
-    padding-left: 4px;
-}
-
-.side-status {
-    padding: 0 10px;
-}
-
-.toggle {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    padding: 0 14px;
+}
+
+.card .card-toggle,
+.card-toggle {
+    width: 36px;
+    height: 36px;
     border-radius: 999px;
-    border: 1px solid #e5e7eb;
-    background: #fff;
+    border: 1px solid transparent;
+    background: #14243d;
+    color: #e2e8f0;
     cursor: pointer;
     font-size: 13px;
-    color: #111;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     transition: background .15s, border-color .15s, opacity .15s, box-shadow .15s;
-    height: 100%;
-    box-sizing: border-box;
-    min-width: 74px;
+    padding: 0;
 }
 
-.toggle .dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: #9ca3af;
-    display: inline-block;
+.power-symbol {
+    font-size: 14px;
+    color: #94a3b8;
+    transition: color .15s;
 }
 
-.toggle.on {
-    background: #ecfdf5;
-    border-color: #bbf7d0;
-    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.15);
+.card-toggle.on {
+    background: #0f172a;
+    border-color: #a855f7;
+    box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.25);
 }
 
-.toggle.on .dot {
-    background: #16a34a;
+.card-toggle.on .power-symbol {
+    color: #a855f7;
 }
 
-.toggle.loading {
+.card-toggle.loading {
     opacity: .7;
     cursor: progress;
 }
 
-.toggle:disabled {
+.card-toggle:disabled {
     opacity: .7;
     pointer-events: none;
 }

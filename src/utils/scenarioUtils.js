@@ -125,26 +125,64 @@ export function normalizeScenarioStruct(scenario) {
     if (!['always', 'onlyWhenHome', 'onlyWhenAway'].includes(scenario.runtime.presence)) {
         scenario.runtime.presence = 'always'
     }
-    scenario.time = scenario.time && typeof scenario.time === 'object'
-        ? scenario.time
-        : {
-            tz: cfg.location?.tz || 'Europe/Moscow',
-            lat: cfg.location?.lat ?? 55.751,
-            lon: cfg.location?.lon ?? 37.617,
-            start: { type: 'clock', time: '18:00' },
-            end: { type: 'sun', anchor: 'sunset', offsetMin: 30 },
-            days: [1, 2, 3, 4, 5, 6, 7]
-        }
-
-    if (!scenario.time.start || scenario.time.start.type !== 'clock') {
-        scenario.time.start = { type: 'clock', time: '18:00' }
-    } else if (typeof scenario.time.start.time !== 'string') {
-        scenario.time.start.time = '18:00'
+    const fallbackTime = {
+        tz: cfg.location?.tz || 'Europe/Moscow',
+        lat: cfg.location?.lat ?? 55.751,
+        lon: cfg.location?.lon ?? 37.617,
+        start: { type: 'clock', time: '18:00' },
+        end: { type: 'sun', anchor: 'sunset', offsetMin: 30 },
+        days: [1, 2, 3, 4, 5, 6, 7]
     }
-    scenario.time.end = { type: 'sun', anchor: 'sunset', offsetMin: 30 }
-    scenario.time.days = Array.isArray(scenario.time.days) && scenario.time.days.length
-        ? scenario.time.days
-        : [1, 2, 3, 4, 5, 6, 7]
+
+    const normalizeBoundary = (boundary, fallback) => {
+        const source = boundary && typeof boundary === 'object' ? boundary : null
+        if (!source) return { ...fallback }
+        if (source.type === 'sun' || source.anchor === 'sunrise' || source.anchor === 'sunset') {
+            const anchor = source.anchor || (source.type === 'sunrise' ? 'sunrise' : 'sunset')
+            return {
+                type: 'sun',
+                anchor: anchor === 'sunrise' ? 'sunrise' : 'sunset',
+                offsetMin: Number.isFinite(source.offsetMin)
+                    ? Math.round(source.offsetMin)
+                    : Number.isFinite(source.offset)
+                        ? Math.round(source.offset)
+                        : 0
+            }
+        }
+        if (source.type === 'sunrise' || source.type === 'sunset') {
+            return {
+                type: 'sun',
+                anchor: source.type === 'sunrise' ? 'sunrise' : 'sunset',
+                offsetMin: Number.isFinite(source.offsetMin)
+                    ? Math.round(source.offsetMin)
+                    : Number.isFinite(source.offset)
+                        ? Math.round(source.offset)
+                        : 0
+            }
+        }
+        const timeString = typeof source.time === 'string' && source.time.trim().length ? source.time.trim() : null
+        return {
+            type: 'clock',
+            time: timeString || fallback.time || '18:00'
+        }
+    }
+
+    const rawTime = scenario.time && typeof scenario.time === 'object' ? scenario.time : {}
+    const normalizedDays = Array.isArray(rawTime.days)
+        ? rawTime.days
+            .map((day) => Number(day))
+            .filter((day) => Number.isFinite(day) && day >= 1 && day <= 7)
+            .sort((a, b) => a - b)
+        : null
+
+    scenario.time = {
+        tz: rawTime.tz || fallbackTime.tz,
+        lat: Number.isFinite(Number(rawTime.lat)) ? Number(rawTime.lat) : fallbackTime.lat,
+        lon: Number.isFinite(Number(rawTime.lon)) ? Number(rawTime.lon) : fallbackTime.lon,
+        days: normalizedDays && normalizedDays.length ? normalizedDays : [...fallbackTime.days],
+        start: normalizeBoundary(rawTime.start, fallbackTime.start),
+        end: normalizeBoundary(rawTime.end, fallbackTime.end)
+    }
 }
 
 export function createDefaultScenario() {

@@ -24,7 +24,7 @@ async function logout() {
         <RouterLink to="/" class="nav-link" exact-active-class="active">Главная</RouterLink>
         <RouterLink to="/scenarios" class="nav-link" active-class="active">Сценарии</RouterLink>
         <RouterLink to="/events" class="nav-link" active-class="active">История</RouterLink>
-        <RouterLink to="/scenario-dial" class="nav-link" active-class="active">Песочница</RouterLink>
+        <RouterLink to="/profile" class="nav-link" active-class="active">Профиль</RouterLink>
       </nav>
       <div class="user-section" v-if="currentUser">
         <div class="user-info">
