@@ -516,21 +516,11 @@ async function toggleOnOff() {
 
 <template>
     <div class="card compact">
-        <div class="row">
+        <div class="top-row">
             <div v-if="isSensorDevice" class="sensor-emoji" aria-hidden="true">{{ sensorEmoji }}</div>
             <div v-else class="icon" :class="{ 'icon-group': isGroup }" aria-hidden="true">
                 <span class="lamp-emoji">💡</span>
                 <span v-if="isGroup" class="lamp-emoji lamp-overlay">💡</span>
-            </div>
-            <div class="main">
-                <div class="title-row">
-                    <div class="title">{{ device.name || 'Unnamed device' }}</div>
-                </div>
-                <div v-if="showStatusRow" class="status-row" :class="{ 'has-dot': statusDotColor }">
-                    <span v-if="statusDotColor" class="status-dot" :style="{ background: statusDotColor }"></span>
-                    <span class="status-text">{{ statusRowText }}</span>
-                </div>
-                <div v-if="detailLine" class="details">{{ detailLine }}</div>
             </div>
             <div v-if="hasOnOffCap" class="side-control">
                 <button class="toggle card-toggle" :class="{ on: localOn, loading: loading }" @click="toggleOnOff"
@@ -539,29 +529,43 @@ async function toggleOnOff() {
                 </button>
             </div>
         </div>
+        <div class="info">
+            <div class="title-row">
+                <div class="title">{{ device.name || 'Unnamed device' }}</div>
+            </div>
+            <div v-if="showStatusRow" class="status-row" :class="{ 'has-dot': statusDotColor }">
+                <span v-if="statusDotColor" class="status-dot" :style="{ background: statusDotColor }"></span>
+                <span class="status-text">{{ statusRowText }}</span>
+            </div>
+            <div v-if="detailLine" class="details">{{ detailLine }}</div>
+        </div>
     </div>
 </template>
 
 <style scoped>
 .card {
-    background: #0f172a;
-    color: #e2e8f0;
-    border: 1px solid #1f2937;
+    background: var(--surface-card);
+    color: var(--text-primary);
+    border: 1px solid rgba(14, 16, 33, 0.8);
     border-radius: 12px;
-    padding: 10px 12px;
-    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.25);
+    padding: 8px 10px;
+    min-height: 110px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
 .card.compact {
     display: flex;
-    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
 }
 
-.row {
+.top-row {
     display: flex;
-    align-items: center;
-    gap: 12px;
-    width: 100%;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
 }
 
 .icon {
@@ -581,9 +585,9 @@ async function toggleOnOff() {
     justify-content: center;
     font-size: 26px;
     border-radius: 12px;
-    border: 1px solid #1f2937;
+    border: 1px solid rgba(14, 16, 33, 0.8);
     background: rgba(255, 255, 255, 0.02);
-    color: #e2e8f0;
+    color: var(--text-primary);
 }
 
 .icon-group .lamp-emoji {
@@ -611,6 +615,12 @@ async function toggleOnOff() {
     min-width: 0;
 }
 
+.info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
 .title-row {
     display: flex;
     align-items: center;
@@ -620,8 +630,11 @@ async function toggleOnOff() {
 .title {
     font-weight: 600;
     margin: 0;
-    font-size: 14px;
-    color: #e2e8f0;
+    font-size: 13px;
+    color: var(--text-primary);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
 }
 
 .status-row {
@@ -629,23 +642,26 @@ async function toggleOnOff() {
     align-items: center;
     gap: 6px;
     font-size: 12px;
-    color: #94a3b8;
+    color: var(--text-muted);
 }
 
 .status-dot {
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    border: 1px solid rgba(226, 232, 240, 0.4);
+    border: 1px solid rgba(226, 232, 240, 0.35);
     display: inline-block;
 }
 
 .details {
-    font-size: 12px;
-    color: #cbd5f5;
-    line-height: 1.4;
-    min-height: 16px;
+    font-size: 11px;
+    color: var(--text-subtle);
+    line-height: 1.2;
+    min-height: 14px;
     word-break: break-word;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
 }
 
 .side-control {

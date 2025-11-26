@@ -9,6 +9,11 @@ const auth = useAuth()
 
 const isLoginRoute = computed(() => route.name === 'login')
 const currentUser = computed(() => auth.user.value)
+const profileInitial = computed(() => {
+  const value = currentUser.value?.email || currentUser.value?.login || ''
+  const clean = String(value || '').trim()
+  return clean ? clean.charAt(0).toUpperCase() : ''
+})
 
 async function logout() {
   await auth.logout()
@@ -24,15 +29,15 @@ async function logout() {
         <RouterLink to="/" class="nav-link" exact-active-class="active">Главная</RouterLink>
         <RouterLink to="/scenarios" class="nav-link" active-class="active">Сценарии</RouterLink>
         <RouterLink to="/events" class="nav-link" active-class="active">История</RouterLink>
-        <RouterLink to="/profile" class="nav-link" active-class="active">Профиль</RouterLink>
       </nav>
-      <div class="user-section" v-if="currentUser">
-        <div class="user-info">
-          <span class="user-name">{{ currentUser.displayName || currentUser.login }}</span>
-          <span v-if="currentUser.email" class="user-email">{{ currentUser.email }}</span>
-        </div>
-        <button type="button" class="logout-btn" @click="logout">Выйти</button>
-      </div>
+      <RouterLink
+        v-if="currentUser"
+        :to="{ name: 'profile' }"
+        class="profile-badge"
+        :title="currentUser.email || 'Профиль'"
+      >
+        {{ profileInitial }}
+      </RouterLink>
     </header>
 
     <router-view />
@@ -45,8 +50,8 @@ async function logout() {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
-  background: #0f172a;
-  color: #e2e8f0;
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 .app-header {
@@ -56,8 +61,9 @@ async function logout() {
   justify-content: space-between;
   gap: 12px;
   padding: 16px 24px;
-  background: #111827;
-  color: #f9fafb;
+  background: var(--surface-muted);
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--surface-border);
 }
 
 .app-header h1 {
@@ -71,24 +77,25 @@ nav {
 }
 
 .nav-link {
-  color: #d1d5db;
+  color: var(--text-muted);
   text-decoration: none;
   font-weight: 500;
+  transition: color var(--transition-base);
 }
 
 .nav-link:hover {
-  color: #f9fafb;
+  color: var(--text-primary);
 }
 
 .nav-link.active {
-  color: #60a5fa;
+  color: var(--primary);
 }
 
 .user-section {
   display: flex;
   align-items: center;
   gap: 12px;
-  background: #1f2937;
+  background: rgba(30, 41, 59, 0.5);
   padding: 10px 16px;
   border-radius: 12px;
 }
@@ -101,12 +108,12 @@ nav {
 
 .user-name {
   font-weight: 600;
-  color: #f8fafc;
+  color: var(--text-primary);
 }
 
 .user-email {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--text-muted);
 }
 
 .logout-btn {
@@ -114,12 +121,30 @@ nav {
   border-radius: 8px;
   padding: 6px 12px;
   font-weight: 600;
-  background: #ef4444;
-  color: #0f172a;
+  background: var(--danger);
+  color: var(--bg-primary);
   cursor: pointer;
 }
 
 .logout-btn:hover {
   background: #f87171;
+}
+
+.profile-badge {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  background: rgba(168, 85, 247, 0.15);
+  color: var(--primary);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  border: 1px solid transparent;
+}
+
+.profile-badge:hover {
+  border-color: rgba(168, 85, 247, 0.5);
 }
 </style>

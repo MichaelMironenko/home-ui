@@ -22,29 +22,8 @@ onMounted(async () => {
 </script>
 
 <template>
-    <main class="home">
-        <section class="card" v-if="!loading && apiBase">
-            <DeviceGrid :api-base="apiBase" path="/catalog" />
-        </section>
-        <section class="card" v-else>
-            <p>Загрузка списка устройств…</p>
-        </section>
+    <main class="page-shell">
+        <DeviceGrid v-if="apiBase" :api-base="apiBase" path="/catalog" />
+        <p v-else class="text-dimmed">Загрузка списка устройств…</p>
     </main>
 </template>
-
-<style scoped>
-.home {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 24px 16px 40px;
-}
-
-.card {
-    background: transparent;
-    border-radius: 0;
-    border: none;
-    padding: 0;
-    box-shadow: none;
-}
-</style>

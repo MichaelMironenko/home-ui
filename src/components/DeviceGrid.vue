@@ -127,14 +127,19 @@ async function loadCatalog({ refresh = false, showLoading = false } = {}) {
         if (showLoading) {
             error.value = e?.message || String(e)
         }
+        return false
     } finally {
         fetching.value = false
         if (showLoading) loading.value = false
     }
+    return true
 }
 
-onMounted(() => {
-    loadCatalog({ refresh: true, showLoading: true })
+onMounted(async () => {
+    const initialSuccess = await loadCatalog({ refresh: false, showLoading: true })
+    if (initialSuccess) {
+        loadCatalog({ refresh: true, showLoading: false })
+    }
     pollId = setInterval(() => loadCatalog({ refresh: false, showLoading: false }), 60000)
 })
 
@@ -320,8 +325,15 @@ const sections = computed(() => {
 
 .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-    gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 12px;
+    grid-auto-rows: minmax(120px, auto);
+}
+
+@media (max-width: 640px) {
+    .grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 
 .empty-state {

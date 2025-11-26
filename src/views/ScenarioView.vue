@@ -1863,13 +1863,13 @@ async function handleDelete() {
 
 <style scoped>
 .scenario-dial-page {
-    padding: 16px;
+    padding: 24px 16px 40px;
     display: flex;
     flex-direction: column;
     gap: 18px;
-    background: #050915;
+    background: var(--bg-primary);
     min-height: 100vh;
-    color: #f8fafc;
+    color: var(--text-primary);
     width: 100%;
     max-width: 1000px;
     margin: 0 auto;
@@ -1893,9 +1893,9 @@ async function handleDelete() {
 .scenario-name-input {
     width: 100%;
     border-radius: 12px;
-    background: #0d1423;
-    color: #f8fafc;
-    border: 1px solid rgba(148, 163, 184, 0.55);
+    background: var(--surface-card);
+    color: var(--text-primary);
+    border: 1px solid rgba(148, 163, 184, 0.5);
     padding: 10px 14px;
     font-size: 18px;
     font-weight: 600;
@@ -1909,23 +1909,25 @@ async function handleDelete() {
 .status-toggle {
     display: flex;
     gap: 6px;
-    background: #121827;
+    background: var(--surface-card);
     padding: 4px;
     border-radius: 999px;
+    border: 1px solid var(--surface-border);
 }
 
 .status-toggle-btn {
     border: none;
     background: transparent;
-    color: #94a3b8;
+    color: var(--text-muted);
     padding: 6px 12px;
     border-radius: 999px;
     font-weight: 600;
+    transition: background var(--transition-base), color var(--transition-base);
 }
 
 .status-toggle-btn.active {
-    background: #6366f1;
-    color: white;
+    background: rgba(168, 85, 247, 0.12);
+    color: var(--primary);
 }
 
 .dial-layout {
@@ -1951,12 +1953,12 @@ async function handleDelete() {
     gap: 12px;
 }
 
-.weekday-picker {
+ .weekday-picker {
     margin-top: 18px;
     padding: 12px;
-    background: #0b1220;
+    background: var(--surface-card);
     border-radius: 16px;
-    border: 1px solid rgba(148, 163, 184, 0.12);
+    border: 1px solid var(--surface-border);
 }
 
 .weekday-picker p {
@@ -1971,19 +1973,20 @@ async function handleDelete() {
 }
 
 .weekday-btn {
-    border: 1px solid rgba(148, 163, 184, 0.5);
+    border: 1px solid rgba(148, 163, 184, 0.4);
     background: transparent;
-    color: #e2e8f0;
+    color: var(--text-primary);
     border-radius: 10px;
     padding: 6px 0;
     font-weight: 600;
     font-size: 12px;
+    transition: background var(--transition-base), color var(--transition-base);
 }
 
 .weekday-btn.active {
-    background: #6366f1;
-    border-color: #6366f1;
-    color: white;
+    background: rgba(168, 85, 247, 0.16);
+    border-color: rgba(168, 85, 247, 0.4);
+    color: var(--primary);
 }
 
 @media (min-width: 500px) {
@@ -2041,12 +2044,12 @@ async function handleDelete() {
     position: relative;
     width: min(520px, 100%);
     max-height: 90vh;
-    background: #050915;
+    background: var(--surface-card);
     border-top-left-radius: 28px;
     border-top-right-radius: 28px;
     padding-bottom: 24px;
     overflow-y: auto;
-    color: #f8fafc;
+    color: var(--text-primary);
 }
 
 .sheet-header {
@@ -2054,7 +2057,7 @@ async function handleDelete() {
     align-items: center;
     justify-content: space-between;
     padding: 16px 20px;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+    border-bottom: 1px solid var(--surface-border);
 }
 
 .sheet-header h3 {
@@ -2066,7 +2069,7 @@ async function handleDelete() {
 .sheet-close {
     border: none;
     background: transparent;
-    color: #a5b4fc;
+    color: var(--primary);
     font-weight: 600;
 }
 

@@ -216,23 +216,23 @@ onMounted(async () => {
 </script>
 
 <template>
-  <main class="list">
+<main class="page-shell list">
     <header class="hero">
       <div>
         <h1>Сценарии</h1>
         <p class="subtitle">Управляйте сценариями освещения и автоматизации</p>
       </div>
-      <div class="actions">
-        <button class="primary" type="button" @click="createScenario">Создать сценарий</button>
-        <button class="secondary" type="button" @click="createAutoLightScenario">Автоматический свет</button>
+        <div class="actions">
+        <button class="primary-button" type="button" @click="createScenario">Создать сценарий</button>
+        <button class="primary-outline-button" type="button" @click="createAutoLightScenario">Автоматический свет</button>
       </div>
     </header>
 
-    <section class="panel" v-if="loading">
+    <section class="panel-card" v-if="loading">
       <p>Загрузка списка…</p>
     </section>
 
-    <section class="panel error" v-else-if="error">
+    <section class="panel-card" v-else-if="error">
       <p>{{ error }}</p>
     </section>
 
@@ -243,7 +243,7 @@ onMounted(async () => {
       <article
         v-for="item in scenarios"
         :key="item.id || item.key || item.name"
-        class="card"
+        class="scenario-card"
         :class="{ paused: isPaused(item), disabled: item.disabled }"
       >
             <header class="card__header">
@@ -281,10 +281,8 @@ onMounted(async () => {
 
 <style scoped>
 .list {
-  max-width: 900px;
+  width: min(960px, 100%);
   margin: 0 auto;
-  padding: 24px 16px 40px;
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -298,7 +296,7 @@ onMounted(async () => {
   gap: 12px;
 }
 
-.hero .actions {
+.actions {
   display: flex;
   gap: 8px;
 }
@@ -306,37 +304,12 @@ onMounted(async () => {
 .hero h1 {
   margin: 0;
   font-size: 28px;
+  color: var(--text-primary);
 }
 
 .subtitle {
   margin: 4px 0 0;
-  color: #6b7280;
-}
-
-.primary {
-  padding: 10px 16px;
-  border-radius: 12px;
-  border: 1px solid #2563eb;
-  background: linear-gradient(135deg, #2563eb, #7c3aed);
-  color: #fff;
-  font-weight: 600;
-  cursor: pointer;
-  transition: transform .1s ease, box-shadow .15s;
-}
-
-.secondary {
-  padding: 10px 16px;
-  border-radius: 12px;
-  border: 1px solid #94a3b8;
-  background: #f8fafc;
-  color: #1f2937;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background .15s ease, color .15s ease;
-}
-
-.secondary:hover {
-  background: #e2e8f0;
+  color: var(--text-muted);
 }
 
 .type-chip {
@@ -344,52 +317,35 @@ onMounted(async () => {
   margin-top: 6px;
   padding: 2px 8px;
   border-radius: 999px;
-  background: #eef2ff;
-  color: #4338ca;
+  background: rgba(168, 85, 247, 0.16);
+  color: var(--primary);
   font-size: 12px;
   font-weight: 600;
 }
 
-.primary:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 12px 24px rgba(59, 130, 246, 0.35);
-}
-
-.panel {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 16px;
-  padding: 16px;
-  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
-}
-
-.panel.error {
-  color: #b91c1c;
-}
-
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 16px;
 }
 
-.card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
+.scenario-card {
+  background: var(--surface-card);
+  border: 1px solid var(--surface-border);
   border-radius: 16px;
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 12px 20px rgba(0, 0, 0, 0.45);
 }
 
-.card.paused {
-  border-color: #f97316;
-  box-shadow: 0 6px 18px rgba(249, 115, 22, 0.28);
+.scenario-card.paused {
+  border-color: rgba(249, 115, 22, 0.55);
+  box-shadow: 0 12px 24px rgba(249, 115, 22, 0.25);
 }
 
-.card.disabled {
+.scenario-card.disabled {
   opacity: 0.65;
   border-style: dashed;
 }
@@ -409,34 +365,36 @@ onMounted(async () => {
 .card__title h2 {
   margin: 0;
   font-size: 18px;
+  color: var(--text-primary);
 }
 
 .status {
   margin: 4px 0 0;
   font-size: 13px;
-  color: #b45309;
+  color: var(--primary);
 }
 
 .status--active {
-  color: #0f766e;
+  color: #34d399;
 }
 
 .status--disabled {
-  color: #6b7280;
+  color: var(--text-muted);
 }
 
 .toggle {
-  background: rgba(15, 23, 42, 0.06);
-  border: 1px solid rgba(15, 23, 42, 0.15);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 10px;
   padding: 6px 12px;
   font-size: 13px;
   cursor: pointer;
   transition: background .15s ease, transform .1s ease;
+  color: var(--text-primary);
 }
 
 .toggle:hover:enabled {
-  background: rgba(37, 99, 235, 0.12);
+  background: rgba(168, 85, 247, 0.12);
   transform: translateY(-1px);
 }
 
@@ -449,16 +407,16 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   font-size: 12px;
-  color: #6b7280;
+  color: var(--text-muted);
 }
 
 .empty {
   grid-column: 1 / -1;
   text-align: center;
-  color: #6b7280;
-  background: #fff;
+  color: var(--text-muted);
+  background: var(--surface-card);
   border-radius: 16px;
   padding: 32px;
-  border: 1px dashed #d1d5db;
+  border: 1px dashed rgba(148, 163, 184, 0.4);
 }
 </style>

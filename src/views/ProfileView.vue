@@ -1,10 +1,13 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useProfile } from '../composables/useProfile'
+import { useAuth } from '../composables/useAuth'
 
 const profileStore = useProfile()
+const auth = useAuth()
 const selectedTimezoneId = ref('')
 const statusMessage = ref('')
+const logoutRunning = ref(false)
 
 const instructions = computed(() => profileStore.instructions)
 const currentTimezoneLabel = computed(() => {
@@ -64,6 +67,15 @@ onMounted(async () => {
     console.warn('[profile] initialization failed', err)
   }
 })
+
+async function handleLogout() {
+  logoutRunning.value = true
+  try {
+    await auth.logout()
+  } finally {
+    logoutRunning.value = false
+  }
+}
 </script>
 
 <template>
@@ -71,7 +83,7 @@ onMounted(async () => {
     <header class="profile-header">
       <div>
         <h1>Профиль</h1>
-        <p>Управляйте часовым поясом и настройками присутствия.</p>
+        <p class="profile-email">{{ profileStore.profile?.email || auth.user.value?.email || '—' }}</p>
       </div>
     </header>
 
@@ -140,12 +152,18 @@ onMounted(async () => {
         <h3>Android (Tasker / Routine)</h3>
         <p>{{ instructions.android }}</p>
       </div>
-      <p v-if="instructions.note" class="note">{{ instructions.note }}</p>
-    </section>
+</section>
 
     <p v-if="profileStore.profileError" class="error-message block">
-      Не удалось загрузить профиль: {{ profileStore.profileError?.message }}
+      Не удалось загрузить профиль: {{ profileStore.profileError }}
     </p>
+
+    <footer class="profile-footer">
+      <button type="button" class="primary-outline-button" @click="handleLogout" :disabled="logoutRunning">
+        {{ logoutRunning ? 'Выходим…' : 'Выйти' }}
+      </button>
+    </footer>
+
   </main>
 </template>
 
@@ -192,6 +210,16 @@ onMounted(async () => {
 
 .panel--dark {
   box-shadow: 0 16px 40px rgba(2, 6, 23, 0.9);
+}
+
+.profile-email {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.profile-footer {
+  display: flex;
+  justify-content: flex-start;
 }
 
 .panel-heading h2 {
