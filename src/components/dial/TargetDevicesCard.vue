@@ -55,7 +55,8 @@ const emit = defineEmits(['open'])
 
 .card-action {
   color: #cdd5e7;
-  font-weight: 700;
-  font-size: 18px;
+  font-weight: 400;
+  font-size: 30px;
+  line-height: 1;
 }
 </style>

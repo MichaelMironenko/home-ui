@@ -256,11 +256,12 @@ const gradientVector = computed(() => {
                 <span v-if="currentState?.colorLabel" class="current-state-line temperature">
                     {{ currentState.colorLabel }}
                 </span>
-                <span v-else-if="currentState?.colorDot" class="current-state-dot" :style="{ background: currentState.colorDot }" />
+                <span v-else-if="currentState?.colorDot" class="current-state-dot"
+                    :style="{ background: currentState.colorDot }" />
             </div>
 
             <div class="dial-face">
-                    <div class="day-night-layer" :style="{ background: dayNightGradient }" />
+                <div class="day-night-layer" :style="{ background: dayNightGradient }" />
                 <svg viewBox="0 0 200 200" class="dial-face-svg">
                     <circle class="dial-face-bg" cx="100" cy="100" r="86" />
                     <g class="tick-group">
@@ -276,9 +277,9 @@ const gradientVector = computed(() => {
             </div>
 
             <button class="dial-handle start" :style="startHandleStyle"
-                @pointerdown="(event) => emit('start-pointerdown', event)" />
+                @pointerdown="(event) => emit('start-pointerdown', event)" @click.stop="emit('open-start-editor')" />
             <button class="dial-handle end" :style="endHandleStyle"
-                @pointerdown="(event) => emit('end-pointerdown', event)" />
+                @pointerdown="(event) => emit('end-pointerdown', event)" @click.stop="emit('open-end-editor')" />
 
             <button v-if="showStartOffset" class="offset-handle" :style="startOffsetStyle"
                 @pointerdown="(event) => emit('start-offset-pointerdown', event)">
@@ -304,17 +305,23 @@ const gradientVector = computed(() => {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
-    align-items: center;
-    margin-bottom: 12px;
+    align-items: flex-start;
+    margin-bottom: 8px;
 }
 
 .time-chip {
     border: none;
-    background: #101931;
+    background: transparent;
     color: inherit;
-    border-radius: 16px;
-    padding: 10px;
-    text-align: left;
+    border-radius: 0;
+    padding: 0;
+    text-align: center;
+    min-height: 80px;
+    gap: 4px;
+    display: flex;
+    flex-direction: column;
+    justify-content: start;
+    align-items: center;
 }
 
 .time-chip span {
@@ -343,7 +350,7 @@ const gradientVector = computed(() => {
     aspect-ratio: 1 / 1;
     border-radius: 50%;
     overflow: hidden;
-    touch-action: none;
+    touch-action: pan-y;
     background: radial-gradient(circle at 50% 50%, #0c101a 58%, #060708 100%);
 }
 

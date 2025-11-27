@@ -74,7 +74,7 @@ function lock(value, min, max) {
                 </button>
             </div>
             <template v-if="stop.useColor">
-                <div class="segmented">
+                <div class="segmented" v-if="isStartContext">
                     <button type="button" :class="{ active: stop.colorMode === 'temperature' }"
                         @click="setColorMode('temperature')">
                         Температура
@@ -85,7 +85,7 @@ function lock(value, min, max) {
                 <div v-if="stop.colorMode === 'temperature'" class="slider-block">
                     <label>
                         {{ stop.temperature }}K
-                        <input class="gradient-range" type="range" min="1000" max="6500" step="100"
+                        <input class="gradient-range" type="range" min="1700" max="6500" step="100"
                             :style="{ '--range-gradient': temperatureGradient }" :value="stop.temperature"
                             @input="updateTemperature($event.target.value)" />
                     </label>

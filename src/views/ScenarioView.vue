@@ -24,9 +24,20 @@ const scenarioStatusOptions = [
     { id: 'off', label: 'Выкл.' }
 ]
 const scenarioStatus = ref('running')
-const scenarioStatusLabel = computed(() => {
-    if (scenarioStatus.value === 'running') return ''
-    return scenarioStatusOptions.find((option) => option.id === scenarioStatus.value)?.label || ''
+const remotePauseActive = computed(() => scenario.autoLight?.state?.status === 'PAUSE')
+const scenarioDisplayStatus = computed(() => {
+    if (scenarioStatus.value === 'off' || scenario.disabled) return 'off'
+    if (remotePauseActive.value && scenarioStatus.value !== 'paused') return 'paused'
+    return scenarioStatus.value
+})
+const scenarioStatusText = computed(
+    () => scenarioStatusOptions.find((option) => option.id === scenarioDisplayStatus.value)?.label || ''
+)
+const scenarioStatusLabel = computed(() => (scenarioDisplayStatus.value === 'running' ? '' : scenarioStatusText.value))
+const scenarioStatusColor = computed(() => {
+    if (scenarioDisplayStatus.value === 'off') return '#94a3b8'
+    if (scenarioDisplayStatus.value === 'paused') return '#facc15'
+    return '#34d399'
 })
 const route = useRoute()
 const router = useRouter()
@@ -65,7 +76,7 @@ const selectionSources = reactive({
     targetGroups: [],
     stateDevices: []
 })
-const editingName = ref(true)
+const editingName = ref(false)
 const nameInputRef = ref(null)
 
 const sunriseTime = ref(7 * 60 + 10)
@@ -82,6 +93,8 @@ const scenarioNameValue = computed({
         }
     }
 })
+
+const scenarioNameDisplay = computed(() => scenarioNameValue.value || 'Название сценария')
 
 watch(editingName, (active) => {
     if (active) {
@@ -114,7 +127,7 @@ function hsvToHex({ h = 0, s = 0, v = 0 }) {
     else if (hp < 3) [r1, g1, b1] = [0, chroma, x]
     else if (hp < 4) [r1, g1, b1] = [0, x, chroma]
     else if (hp < 5) [r1, g1, b1] = [x, 0, chroma]
-    else [r1, g1, b1] = [chroma, 0, x]
+    else[r1, g1, b1] = [chroma, 0, x]
     const m = value - chroma
     const r = Math.round((r1 + m) * 255)
     const g = Math.round((g1 + m) * 255)
@@ -248,9 +261,9 @@ function createStopState({
         temperature,
         colorHex,
         brightness,
-    useColor,
-    useBrightness
-})
+        useColor,
+        useBrightness
+    })
 }
 
 function serializeStop(stop) {
@@ -367,8 +380,8 @@ function hydrateStopsFromActions(actions) {
         endStop.useColor = true
         startStop.colorMode = 'temperature'
         endStop.colorMode = 'temperature'
-        if (colorAction.source?.fromK) startStop.temperature = clampNumberLocal(colorAction.source.fromK, 1000, 6500)
-        if (colorAction.source?.toK) endStop.temperature = clampNumberLocal(colorAction.source.toK, 1000, 6500)
+        if (colorAction.source?.fromK) startStop.temperature = clampNumberLocal(colorAction.source.fromK, 1700, 6500)
+        if (colorAction.source?.toK) endStop.temperature = clampNumberLocal(colorAction.source.toK, 1700, 6500)
         startStop.colorHex = temperatureToHex(startStop.temperature)
         endStop.colorHex = temperatureToHex(endStop.temperature)
     } else if (colorAction?.type?.includes('hsv')) {
@@ -420,7 +433,7 @@ function captureSelectionSourcesFromScenario(source = scenario) {
 function resolveScenarioSelection() {
     const groupSet = new Set(selectionSources.targetGroups || [])
     const deviceSet = new Set(selectionSources.targetDevices || [])
-    ;(selectionSources.stateDevices || []).forEach((id) => deviceSet.add(id))
+        ; (selectionSources.stateDevices || []).forEach((id) => deviceSet.add(id))
     applyGroupMembersToDevices(deviceSet, groupSet)
     return { groups: groupSet, devices: deviceSet }
 }
@@ -487,6 +500,18 @@ watch(
     { immediate: true }
 )
 
+function toggleScenarioPause() {
+    if (scenarioDisplayStatus.value === 'off') {
+        scenarioStatus.value = 'running'
+        return
+    }
+    scenarioStatus.value = scenarioDisplayStatus.value === 'paused' ? 'running' : 'paused'
+}
+
+function toggleScenarioPower() {
+    scenarioStatus.value = scenarioDisplayStatus.value === 'off' ? 'running' : 'off'
+}
+
 const timeTicker = ref(Date.now())
 let timeTickerInterval = null
 
@@ -496,7 +521,7 @@ const currentWorldMinute = computed(() => {
 })
 
 const currentState = computed(() => {
-    if (scenarioStatus.value !== 'running') return null
+    if (scenarioDisplayStatus.value !== 'running') return null
     const nowMinute = currentWorldMinute.value
     const startMin = stopMinutes(startStop)
     const endMin = stopMinutes(endStop)
@@ -912,7 +937,7 @@ const scenarioArcColor = computed(() => {
     return 'url(#neutralGradient)'
 })
 
-const dialInactive = computed(() => ['off', 'paused'].includes(scenarioStatus.value))
+const dialInactive = computed(() => ['off', 'paused'].includes(scenarioDisplayStatus.value))
 
 const dialGradientStops = computed(() => ({
     start: stopColorHex(startStop),
@@ -920,16 +945,16 @@ const dialGradientStops = computed(() => ({
 }))
 
 function temperatureToHex(kelvin) {
-    const clamped = Math.max(2000, Math.min(6500, kelvin))
+    const clamped = Math.max(1700, Math.min(6500, kelvin))
     const pivot = 5500
-    const warm = { r: 255, g: 207, b: 160 }
+    const warm = { r: 255, g: 165, b: 70 }
     const neutral = { r: 255, g: 255, b: 255 }
-    const cool = { r: 180, g: 210, b: 255 }
+    const cool = { r: 200, g: 225, b: 255 }
     let r
     let g
     let b
     if (clamped <= pivot) {
-        const ratio = (clamped - 2000) / (pivot - 2000)
+        const ratio = (clamped - 1700) / (pivot - 1700)
         r = Math.round(warm.r + (neutral.r - warm.r) * ratio)
         g = Math.round(warm.g + (neutral.g - warm.g) * ratio)
         b = Math.round(warm.b + (neutral.b - warm.b) * ratio)
@@ -1191,6 +1216,8 @@ function summarizeStopState(stop) {
         colorHex,
         values,
         hasColor,
+        hasBrightness: !!stop.useBrightness,
+        brightness: Number.isFinite(stop.brightness) ? stop.brightness : 0,
         placeholder: values.length ? '' : 'Не меняем'
     }
 }
@@ -1364,8 +1391,8 @@ function buildColorAction() {
             applyOnlyIfOn: true,
             source: {
                 type: 'manualRamp',
-                fromK: clampNumberLocal(startStop.temperature, 1000, 6500),
-                toK: clampNumberLocal(endStop.temperature, 1000, 6500)
+                fromK: clampNumberLocal(startStop.temperature, 1700, 6500),
+                toK: clampNumberLocal(endStop.temperature, 1700, 6500)
             }
         }
     }
@@ -1392,7 +1419,7 @@ function resetScenarioState() {
     resetAutoBrightness()
     presenceMode.value = 'any'
     scenarioStatus.value = 'running'
-    editingName.value = true
+    editingName.value = false
     applyStopsFromScenario()
     syncSelectedDevicesFromSources(true)
 }
@@ -1416,7 +1443,8 @@ async function loadScenarioById(id) {
         scenario.id = data.id || ''
         scenario.name = data.name || ''
         presenceMode.value = scenario.runtime?.presence === 'onlyWhenHome' ? 'home' : 'any'
-        scenarioStatus.value = scenario.disabled ? 'off' : 'running'
+        const remoteStatus = scenario.autoLight?.state?.status === 'PAUSE' ? 'paused' : 'running'
+        scenarioStatus.value = scenario.disabled ? 'off' : remoteStatus
         const hasAutoState = Boolean(data?.autoLight?.state && typeof data.autoLight.state === 'object')
         scenarioHasAutoState.value = hasAutoState
         captureSelectionSourcesFromScenario()
@@ -1424,7 +1452,7 @@ async function loadScenarioById(id) {
         if (!hasAutoState) hydrateStopsFromActions(scenario.actions || [])
         applyStopsFromScenario()
         syncSelectedDevicesFromSources(true)
-        editingName.value = !scenario.name
+        editingName.value = false
     } catch (err) {
         console.error('Failed to load scenario', err)
         scenarioError.value = err?.message || 'Не удалось загрузить сценарий'
@@ -1448,10 +1476,12 @@ async function saveScenario() {
             captureSelectionSourcesFromScenario()
             if (!hasState) hydrateStopsFromActions(scenario.actions || [])
         }
+        const remoteStatus = scenario.autoLight?.state?.status === 'PAUSE' ? 'paused' : 'running'
+        scenarioStatus.value = scenario.disabled ? 'off' : remoteStatus
         applyStopsFromScenario()
         if (!selectionDirty.value) syncSelectedDevicesFromSources(false)
         scenarioMessage.value = 'Сценарий сохранен'
-        editingName.value = !scenario.name
+        editingName.value = false
         const savedId = response?.scenario?.id || scenario.id
         if (savedId && (isCreateMode.value || routeScenarioId.value !== savedId)) {
             router.replace({ name: 'scenario-edit', params: { id: savedId } })
@@ -1535,19 +1565,19 @@ const availableDeviceMap = computed(() => {
 })
 const catalogGroupsById = computed(() => {
     const map = new Map()
-    ;(catalog.groups || []).forEach((group) => {
-        if (group?.id) map.set(group.id, group)
-    })
+        ; (catalog.groups || []).forEach((group) => {
+            if (group?.id) map.set(group.id, group)
+        })
     return map
 })
 const groupMembers = computed(() => {
     const map = new Map()
     const validIds = availableDeviceIds.value
-    ;(catalog.groups || []).forEach((group) => {
-        if (!group?.id) return
-        const members = (Array.isArray(group.devices) ? group.devices : []).filter((id) => validIds.has(id))
-        if (members.length) map.set(group.id, members)
-    })
+        ; (catalog.groups || []).forEach((group) => {
+            if (!group?.id) return
+            const members = (Array.isArray(group.devices) ? group.devices : []).filter((id) => validIds.has(id))
+            if (members.length) map.set(group.id, members)
+        })
     return map
 })
 
@@ -1609,9 +1639,9 @@ const selectedTargetsLabel = computed(() => {
     selectedGroupIds.value.forEach((groupId) => {
         const group = catalogGroupsById.value.get(groupId)
         parts.push(group?.name || 'Группа без имени')
-        ;(groupMembers.value.get(groupId) || []).forEach((deviceId) => {
-            groupDeviceIds.add(deviceId)
-        })
+            ; (groupMembers.value.get(groupId) || []).forEach((deviceId) => {
+                groupDeviceIds.add(deviceId)
+            })
     })
     selectedDevicesIds.value.forEach((deviceId) => {
         if (groupDeviceIds.has(deviceId)) return
@@ -1645,29 +1675,29 @@ const deviceSections = computed(() => {
         return section
     }
 
-    ;(catalog.groups || []).forEach((group) => {
-        if (!group?.id) return
-        const members = (groupMembers.value.get(group.id) || [])
-            .map((id) => availableDeviceMap.value.get(id))
-            .filter(Boolean)
-        if (!members.length) return
-        const roomIds = Array.from(new Set(members.map((device) => device.roomId).filter(Boolean)))
-        let sectionKey = ''
-        let sectionName = ''
-        if (roomIds.length === 1) {
-            sectionKey = roomIds[0]
-            sectionName = members[0]?.roomName || roomsById.value.get(sectionKey)?.name || 'Без комнаты'
-        } else {
-            sectionKey = `__group-${group.id}`
-            sectionName = 'Разные комнаты'
-        }
-        const section = ensureSection(sectionKey, sectionName)
-        section.groups.push({
-            id: group.id,
-            name: group.name || 'Группа без имени',
-            devices: members.map((device) => ({ id: device.id, name: device.name || 'Лампа' }))
+        ; (catalog.groups || []).forEach((group) => {
+            if (!group?.id) return
+            const members = (groupMembers.value.get(group.id) || [])
+                .map((id) => availableDeviceMap.value.get(id))
+                .filter(Boolean)
+            if (!members.length) return
+            const roomIds = Array.from(new Set(members.map((device) => device.roomId).filter(Boolean)))
+            let sectionKey = ''
+            let sectionName = ''
+            if (roomIds.length === 1) {
+                sectionKey = roomIds[0]
+                sectionName = members[0]?.roomName || roomsById.value.get(sectionKey)?.name || 'Без комнаты'
+            } else {
+                sectionKey = `__group-${group.id}`
+                sectionName = 'Разные комнаты'
+            }
+            const section = ensureSection(sectionKey, sectionName)
+            section.groups.push({
+                id: group.id,
+                name: group.name || 'Группа без имени',
+                devices: members.map((device) => ({ id: device.id, name: device.name || 'Лампа' }))
+            })
         })
-    })
 
     availableLamps.value.forEach((device) => {
         if (groupedDeviceIds.value.has(device.id)) return
@@ -1721,13 +1751,66 @@ function closeModal() {
 }
 
 const bodyOverflow = ref('')
+const sheetClosing = ref(false)
+const sheetTranslate = ref(0)
+const sheetDragStartY = ref(null)
+const sheetDragActive = ref(false)
+const sheetDragElement = ref(null)
+
 watch(activeModal, (value, prev) => {
     if (value && !prev) {
         bodyOverflow.value = document.body.style.overflow
         document.body.style.overflow = 'hidden'
     } else if (!value && prev) {
         document.body.style.overflow = bodyOverflow.value || ''
+        sheetTranslate.value = 0
+        sheetClosing.value = false
     }
+})
+
+function closeSheetWithAnimation() {
+    sheetClosing.value = true
+    sheetTranslate.value = 200
+    setTimeout(() => {
+        closeModal()
+        sheetTranslate.value = 0
+        sheetClosing.value = false
+    }, 250)
+}
+
+function startSheetDrag(event) {
+    if (event.pointerType === 'mouse') return
+    event.preventDefault()
+    sheetDragStartY.value = event.clientY
+    sheetDragActive.value = true
+    sheetDragElement.value = event.currentTarget
+    sheetDragElement.value?.setPointerCapture?.(event.pointerId)
+}
+
+function handleSheetDrag(event) {
+    if (!sheetDragActive.value || sheetDragStartY.value == null) return
+    if (event.pointerType === 'mouse') return
+    event.preventDefault()
+    const delta = event.clientY - sheetDragStartY.value
+    sheetTranslate.value = Math.max(0, delta)
+}
+
+function endSheetDrag(event) {
+    if (!sheetDragActive.value) return
+    sheetDragElement.value?.releasePointerCapture?.(event.pointerId)
+    if (sheetTranslate.value > 120) {
+        closeSheetWithAnimation()
+    } else {
+        sheetTranslate.value = 0
+    }
+    sheetDragActive.value = false
+    sheetDragStartY.value = null
+    sheetDragElement.value = null
+}
+
+const sheetTransform = computed(() => {
+    const translate = Math.max(sheetTranslate.value, 0)
+    return `translateY(${translate}px)`
 })
 
 const currentStopForModal = computed(() => {
@@ -1767,42 +1850,57 @@ async function handleDelete() {
     <main class="scenario-dial-page">
         <div class="title-row">
             <div class="scenario-name-wrap">
-                <input v-if="editingName || !scenarioNameValue" ref="nameInputRef" v-model="scenarioNameValue"
-                    maxlength="40"
+                <input v-if="editingName" ref="nameInputRef" v-model="scenarioNameValue" maxlength="40"
                     class="scenario-name-input" type="text" placeholder="Название сценария" @blur="finishEditingName"
                     @keyup.enter="finishEditingName" />
-                <button v-else class="scenario-name-display" type="button" @click="editingName = true">
-                    {{ scenarioNameValue }}
+                <button v-else :class="['scenario-name-display', { placeholder: !scenarioNameValue }]" type="button"
+                    @click="editingName = true">
+                    {{ scenarioNameDisplay }}
                 </button>
             </div>
-            <div class="status-toggle">
-                <button v-for="option in scenarioStatusOptions" :key="option.id" type="button"
-                    class="status-toggle-btn" :class="{ active: scenarioStatus === option.id }"
-                    @click="scenarioStatus = option.id">
-                    {{ option.label }}
-                </button>
+            <div class="status-panel">
+                <div class="status-text" :style="{ color: scenarioStatusColor }">
+                    <strong>{{ scenarioStatusText }}</strong>
+                </div>
+                <div class="status-actions">
+                    <button type="button" class="status-icon-btn"
+                        :title="scenarioDisplayStatus === 'paused' ? 'Возобновить' : 'Пауза'"
+                        @click="toggleScenarioPause" :disabled="scenarioDisplayStatus === 'off'">
+                        <span v-if="scenarioDisplayStatus === 'paused'">▶</span>
+                        <span v-else>⏸</span>
+                    </button>
+                    <button type="button" class="status-icon-btn power"
+                        :title="scenarioDisplayStatus === 'off' ? 'Включить' : 'Выключить'"
+                        @click="toggleScenarioPower">
+                        <span>{{ scenarioDisplayStatus === 'off' ? '⏻' : '⏼' }}</span>
+                    </button>
+                </div>
             </div>
         </div>
 
         <div class="dial-layout">
             <div class="dial-column">
-                <ScenarioDialCircle :dial-ref="assignDialRef" :dial-metrics="dialMetrics" :day-night-gradient="dayNightGradient"
-                    :scenario-arc="scenarioArc" :scenario-arc-color="scenarioArcColor" :scenario-arc-width="scenarioArcWidth"
+                <ScenarioDialCircle :dial-ref="assignDialRef" :dial-metrics="dialMetrics"
+                    :day-night-gradient="dayNightGradient" :scenario-arc="scenarioArc"
+                    :scenario-arc-color="scenarioArcColor" :scenario-arc-width="scenarioArcWidth"
                     :base-ring-width="baseRingWidth" :offset-arc-width="offsetArcWidth" :offset-arcs="offsetArcs"
                     :ring-radius="trackRadius" :arc-radius="mainArcRadius" :offset-arc-radius="offsetArcRadius"
-                    :offset-labels="offsetArcLabels" :inactive="dialInactive" :paused="scenarioStatus === 'paused'"
-                    :tick-marks="tickMarks" :hour-number-items="hourNumberItems" :sun-icon-coord="sunIconCoord"
-                    :moon-icon-coord="moonIconCoord" :start-label="startLabel" :end-label="endLabel"
-                    :start-label-compact="startLabelCompact" :end-label-compact="endLabelCompact"
-                    :auto-brightness="autoBrightnessActive" :auto-arc-text="autoArcText" :current-state="currentState" :current-status-label="scenarioStatusLabel" :start-handle-style="startHandleStyle"
+                    :offset-labels="offsetArcLabels" :inactive="dialInactive"
+                    :paused="scenarioDisplayStatus === 'paused'" :tick-marks="tickMarks"
+                    :hour-number-items="hourNumberItems" :sun-icon-coord="sunIconCoord" :moon-icon-coord="moonIconCoord"
+                    :start-label="startLabel" :end-label="endLabel" :start-label-compact="startLabelCompact"
+                    :end-label-compact="endLabelCompact" :auto-brightness="autoBrightnessActive"
+                    :auto-arc-text="autoArcText" :current-state="currentState"
+                    :current-status-label="scenarioStatusLabel" :start-handle-style="startHandleStyle"
                     :end-handle-style="endHandleStyle" :show-start-offset="showStartOffset"
-                    :start-offset-style="startOffsetStyle" :show-end-offset="showEndOffset" :end-offset-style="endOffsetStyle"
-                    :gradient-start-color="dialGradientStops.start" :gradient-end-color="dialGradientStops.end"
-                    :gradient-coords="scenarioGradientCoords" :dial-face-ratio="dialFaceRatio" :sunrise-marker="sunriseMarker"
-                    :sunset-marker="sunsetMarker" @open-start-editor="openModal('state', 'start')"
-                    @open-end-editor="openModal('state', 'end')" @resume="scenarioStatus = 'running'"
-                    @pointer-move="handlePointerMove" @pointer-up="stopDragging" @pointer-cancel="stopDragging"
-                    @pointer-leave="stopDragging" @start-pointerdown="(event) => handlePointerDown('start', event)"
+                    :start-offset-style="startOffsetStyle" :show-end-offset="showEndOffset"
+                    :end-offset-style="endOffsetStyle" :gradient-start-color="dialGradientStops.start"
+                    :gradient-end-color="dialGradientStops.end" :gradient-coords="scenarioGradientCoords"
+                    :dial-face-ratio="dialFaceRatio" :sunrise-marker="sunriseMarker" :sunset-marker="sunsetMarker"
+                    @open-start-editor="openModal('state', 'start')" @open-end-editor="openModal('state', 'end')"
+                    @resume="scenarioStatus = 'running'" @pointer-move="handlePointerMove" @pointer-up="stopDragging"
+                    @pointer-cancel="stopDragging" @pointer-leave="stopDragging"
+                    @start-pointerdown="(event) => handlePointerDown('start', event)"
                     @end-pointerdown="(event) => handlePointerDown('end', event)"
                     @start-offset-pointerdown="(event) => handlePointerDown('start-offset', event)"
                     @end-offset-pointerdown="(event) => handlePointerDown('end-offset', event)" />
@@ -1822,8 +1920,8 @@ async function handleDelete() {
                         @open="openModal('devices')" />
 
                     <StopPreviewList :start-summary="startStateSummary" :end-summary="endStateSummary"
-                        :auto-brightness-active="autoBrightnessActive"
-                        @open-start="openModal('state', 'start')" @open-end="openModal('state', 'end')" />
+                        :auto-brightness-active="autoBrightnessActive" @open-start="openModal('state', 'start')"
+                        @open-end="openModal('state', 'end')" />
                 </section>
 
                 <PresenceFooter :options="presenceOptions" :value="presenceMode" @update:value="presenceMode = $event"
@@ -1836,10 +1934,11 @@ async function handleDelete() {
         </div>
 
         <Teleport to="body">
-            <div v-if="activeModal" class="sheet-overlay">
+            <div v-if="activeModal" class="sheet-overlay" @touchmove.passive>
                 <div class="sheet-backdrop" @click="closeModal" />
-                <div class="sheet-panel">
-                    <header class="sheet-header">
+                <div class="sheet-panel" :class="{ closing: sheetClosing }" :style="{ transform: sheetTransform }">
+                    <header class="sheet-header" @pointerdown="startSheetDrag" @pointermove="handleSheetDrag"
+                        @pointerup="endSheetDrag" @pointercancel="endSheetDrag">
                         <button type="button" class="sheet-close" @click="closeModal">Закрыть</button>
                         <h3 v-if="activeModal === 'devices'">Выбор устройств</h3>
                         <h3 v-else>
@@ -1889,7 +1988,6 @@ async function handleDelete() {
     max-width: 40ch;
 }
 
-.scenario-name-display,
 .scenario-name-input {
     width: 100%;
     border-radius: 12px;
@@ -1902,32 +2000,59 @@ async function handleDelete() {
 }
 
 .scenario-name-display {
+    width: 100%;
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin: 0;
     text-align: left;
     cursor: text;
-}
-
-.status-toggle {
-    display: flex;
-    gap: 6px;
-    background: var(--surface-card);
-    padding: 4px;
-    border-radius: 999px;
-    border: 1px solid var(--surface-border);
-}
-
-.status-toggle-btn {
-    border: none;
-    background: transparent;
-    color: var(--text-muted);
-    padding: 6px 12px;
-    border-radius: 999px;
+    font-size: 18px;
     font-weight: 600;
-    transition: background var(--transition-base), color var(--transition-base);
+    color: #f8fafc;
 }
 
-.status-toggle-btn.active {
-    background: rgba(168, 85, 247, 0.12);
-    color: var(--primary);
+.scenario-name-display.placeholder {
+    color: rgba(248, 250, 252, 0.5);
+}
+
+.status-panel {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.status-text strong {
+    font-size: 16px;
+}
+
+.status-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.status-icon-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 1px solid rgba(148, 163, 184, 0.4);
+    background: rgba(15, 23, 42, 0.4);
+    color: #f8fafc;
+    font-size: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.status-icon-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.status-icon-btn.power {
+    font-size: 18px;
 }
 
 .dial-layout {
@@ -1953,7 +2078,7 @@ async function handleDelete() {
     gap: 12px;
 }
 
- .weekday-picker {
+.weekday-picker {
     margin-top: 18px;
     padding: 12px;
     background: var(--surface-card);
@@ -1973,10 +2098,10 @@ async function handleDelete() {
 }
 
 .weekday-btn {
-    border: 1px solid rgba(148, 163, 184, 0.4);
+    border: none;
     background: transparent;
     color: var(--text-primary);
-    border-radius: 10px;
+    border-radius: 999px;
     padding: 6px 0;
     font-weight: 600;
     font-size: 12px;
@@ -2048,8 +2173,35 @@ async function handleDelete() {
     border-top-left-radius: 28px;
     border-top-right-radius: 28px;
     padding-bottom: 24px;
-    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     color: var(--text-primary);
+    transform: translateY(100%);
+    animation: sheet-slide-in 0.3s ease-out forwards;
+    touch-action: pan-y;
+}
+
+.sheet-panel.closing {
+    animation: sheet-slide-out 0.25s ease-in forwards;
+}
+
+@keyframes sheet-slide-in {
+    from {
+        transform: translateY(100%);
+    }
+    to {
+        transform: translateY(0);
+    }
+}
+
+@keyframes sheet-slide-out {
+    from {
+        transform: translateY(var(--sheet-current-translate, 0));
+    }
+    to {
+        transform: translateY(100%);
+    }
 }
 
 .sheet-header {
@@ -2058,6 +2210,8 @@ async function handleDelete() {
     justify-content: space-between;
     padding: 16px 20px;
     border-bottom: 1px solid var(--surface-border);
+    touch-action: none;
+    cursor: grab;
 }
 
 .sheet-header h3 {
@@ -2078,5 +2232,7 @@ async function handleDelete() {
     display: flex;
     flex-direction: column;
     gap: 14px;
+    overflow-y: auto;
+    max-height: calc(90vh - 80px);
 }
 </style>

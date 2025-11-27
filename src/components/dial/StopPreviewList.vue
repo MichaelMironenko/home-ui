@@ -16,12 +16,9 @@ const props = defineProps({
 
 const emit = defineEmits(['open-start', 'open-end'])
 
-const iconStyle = (summary) => {
-  if (!summary?.hasColor) return {}
-  const color = summary.colorHex
-  if (!color) return {}
-  return { background: color, '--state-icon-color': color }
-}
+import { computePreviewIconStyle } from '../../utils/previewIcon'
+
+const iconStyle = (summary, autoActive) => computePreviewIconStyle(summary, autoActive)
 </script>
 
 <template>
@@ -30,11 +27,12 @@ const iconStyle = (summary) => {
 <button type="button" class="state-card" @click="emit('open-start')">
         <div class="state-icon"
           :class="{
-            empty: !props.startSummary.hasColor,
-            'auto-active': props.autoBrightnessActive,
-            'color-active': props.autoBrightnessActive && props.startSummary.hasColor
+            empty: !props.startSummary.hasColor && !props.startSummary.hasBrightness,
+            'auto-active': props.autoBrightnessActive && props.startSummary.hasBrightness,
+            'auto-color': props.autoBrightnessActive && props.startSummary.hasColor,
+            'color-active': !props.autoBrightnessActive && props.startSummary.hasColor
           }"
-          :style="iconStyle(props.startSummary)"></div>
+          :style="iconStyle(props.startSummary, props.autoBrightnessActive)"></div>
         <div class="state-body">
           <p class="state-label">Старт</p>
           <p class="state-row">
@@ -51,11 +49,12 @@ const iconStyle = (summary) => {
 <button type="button" class="state-card" @click="emit('open-end')">
         <div class="state-icon"
           :class="{
-            empty: !props.endSummary.hasColor,
-            'auto-active': props.autoBrightnessActive,
-            'color-active': props.autoBrightnessActive && props.endSummary.hasColor
+            empty: !props.endSummary.hasColor && !props.endSummary.hasBrightness,
+            'auto-active': props.autoBrightnessActive && props.endSummary.hasBrightness,
+            'auto-color': props.autoBrightnessActive && props.endSummary.hasColor,
+            'color-active': !props.autoBrightnessActive && props.endSummary.hasColor
           }"
-          :style="iconStyle(props.endSummary)"></div>
+          :style="iconStyle(props.endSummary, props.autoBrightnessActive)"></div>
         <div class="state-body">
           <p class="state-label">Финиш</p>
           <p class="state-row">
@@ -100,18 +99,8 @@ const iconStyle = (summary) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--state-icon-bg, rgba(255, 255, 255, 0.14));
   box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.25);
-}
-
-.state-icon.color-active {
-  animation: icon-color-pulse 2.4s ease-in-out infinite;
-  box-shadow: 0 0 12px var(--state-icon-color, #94a3b8);
-}
-
-.state-card.auto-active .state-icon {
-  background: var(--state-icon-color, #f8fafc);
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.45), 0 0 10px rgba(194, 181, 255, 0.5);
 }
 
 .state-icon.empty {
@@ -120,31 +109,37 @@ const iconStyle = (summary) => {
 }
 
 .state-icon.auto-active {
-  animation: icon-auto-pulse 3.6s ease-in-out infinite;
+  animation: icon-auto-brightness 4.5s ease-in-out infinite;
+  background: var(--state-icon-bg, rgba(255, 255, 255, 0.8));
   box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.8), 0 0 8px rgba(79, 70, 229, 0.4);
 }
 
-@keyframes icon-auto-pulse {
+.state-icon.auto-active.auto-color {
+  animation: icon-auto-color 4.5s ease-in-out infinite;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.9), 0 0 8px rgba(79, 70, 229, 0.4);
+}
+
+@keyframes icon-auto-brightness {
   0% {
-    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.8), 0 0 10px rgba(79, 70, 229, 0.5);
+    opacity: 0.3;
   }
   50% {
-    box-shadow: inset 0 0 0 2px rgba(148, 163, 184, 0.6), 0 0 4px rgba(79, 70, 229, 0.2);
+    opacity: 0.85;
   }
   100% {
-    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.8), 0 0 10px rgba(79, 70, 229, 0.5);
+    opacity: 0.3;
   }
 }
 
-@keyframes icon-color-pulse {
+@keyframes icon-auto-color {
   0% {
-    box-shadow: 0 0 6px var(--state-icon-color, #94a3b8);
+    opacity: 0.6;
   }
   50% {
-    box-shadow: 0 0 18px var(--state-icon-color, #94a3b8);
+    opacity: 1;
   }
   100% {
-    box-shadow: 0 0 6px var(--state-icon-color, #94a3b8);
+    opacity: 0.6;
   }
 }
 
@@ -182,7 +177,9 @@ const iconStyle = (summary) => {
 .chevron {
   margin-left: auto;
   color: #475569;
-  font-weight: 600;
+  font-weight: 400;
+  font-size: 30px;
+  line-height: 1;
 }
 
 @keyframes preview-auto-pulse {
