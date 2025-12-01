@@ -277,9 +277,9 @@ const gradientVector = computed(() => {
             </div>
 
             <button class="dial-handle start" :style="startHandleStyle"
-                @pointerdown="(event) => emit('start-pointerdown', event)" @click.stop="emit('open-start-editor')" />
+                @pointerdown="(event) => emit('start-pointerdown', event)" />
             <button class="dial-handle end" :style="endHandleStyle"
-                @pointerdown="(event) => emit('end-pointerdown', event)" @click.stop="emit('open-end-editor')" />
+                @pointerdown="(event) => emit('end-pointerdown', event)" />
 
             <button v-if="showStartOffset" class="offset-handle" :style="startOffsetStyle"
                 @pointerdown="(event) => emit('start-offset-pointerdown', event)">

@@ -70,21 +70,25 @@ function handleDeviceToggle(device, group, event) {
 <style scoped>
 .device-section {
     background: #0b1220;
-    border-radius: 16px;
-    padding: 12px 0px 12px 0px;
+    border-radius: 14px;
+    padding: 8px 0 6px;
+    margin-bottom: 10px;
+    border: 1px solid rgba(148, 163, 184, 0.12);
 }
 
 .section-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
+    gap: 6px;
+    padding: 0 12px 4px;
 }
 
 .section-title {
-    margin: 0 0 8px;
+    margin: 0;
     font-weight: 600;
     color: #e5e7eb;
+    font-size: 14px;
 }
 
 .group-row,
@@ -92,8 +96,8 @@ function handleDeviceToggle(device, group, event) {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 8px 0;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+    padding: 6px 12px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.08);
 }
 
 .group-row:last-child,
@@ -105,6 +109,7 @@ function handleDeviceToggle(device, group, event) {
     margin: 0;
     font-weight: 600;
     color: #e5e7eb;
+    font-size: 14px;
 }
 
 .group-meta {
@@ -115,9 +120,9 @@ function handleDeviceToggle(device, group, event) {
 
 .group-badge {
     display: inline-flex;
-    padding: 2px 8px;
+    padding: 1px 6px;
     border-radius: 10px;
-    background: rgba(99, 102, 241, 0.2);
+    background: rgba(99, 102, 241, 0.18);
     color: #c5c7ff;
     font-size: 10px;
     text-transform: uppercase;
@@ -126,14 +131,14 @@ function handleDeviceToggle(device, group, event) {
 .group-devices {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    margin-top: 6px;
-    padding-left: 16px;
+    gap: 2px;
+    margin-top: 4px;
+    padding: 0 12px 0 18px;
 }
 
 .group-device-row {
     border-bottom: none;
-    padding: 6px 0;
+    padding: 4px 0;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -142,22 +147,22 @@ function handleDeviceToggle(device, group, event) {
 .group-title {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
 }
 
 .group-device-row span {
-    font-size: 13px;
+    font-size: 12px;
     color: #e5e7eb;
 }
 
 .device-row span {
-    font-size: 15px;
+    font-size: 14px;
     color: #e2e8f0;
 }
 
 .toggle {
-    width: 44px;
-    height: 24px;
+    width: 38px;
+    height: 20px;
     border-radius: 999px;
     border: none;
     background: rgba(148, 163, 184, 0.4);
@@ -167,24 +172,24 @@ function handleDeviceToggle(device, group, event) {
 }
 
 .toggle.small {
-    width: 34px;
-    height: 20px;
+    width: 30px;
+    height: 18px;
 }
 
 .toggle span {
     position: absolute;
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
     border-radius: 50%;
     background: white;
-    top: 3px;
-    left: 4px;
+    top: 2px;
+    left: 3px;
     transition: transform 0.2s;
 }
 
 .toggle.small span {
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
     top: 3px;
     left: 3px;
 }
@@ -194,10 +199,10 @@ function handleDeviceToggle(device, group, event) {
 }
 
 .toggle.active span {
-    transform: translateX(18px);
+    transform: translateX(16px);
 }
 
 .toggle.small.toggle.active span {
-    transform: translateX(14px);
+    transform: translateX(12px);
 }
 </style>

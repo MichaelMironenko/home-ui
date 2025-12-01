@@ -24,10 +24,8 @@ const scenarioStatusOptions = [
     { id: 'off', label: 'Выкл.' }
 ]
 const scenarioStatus = ref('running')
-const remotePauseActive = computed(() => scenario.autoLight?.state?.status === 'PAUSE')
 const scenarioDisplayStatus = computed(() => {
     if (scenarioStatus.value === 'off' || scenario.disabled) return 'off'
-    if (remotePauseActive.value && scenarioStatus.value !== 'paused') return 'paused'
     return scenarioStatus.value
 })
 const scenarioStatusText = computed(
@@ -69,12 +67,10 @@ scenario.id = ''
 scenario.name = ''
 const selectedDevicesIds = ref(new Set())
 const selectedGroupIds = ref(new Set())
-const scenarioHasAutoState = ref(true)
 const selectionDirty = ref(false)
 const selectionSources = reactive({
     targetDevices: [],
-    targetGroups: [],
-    stateDevices: []
+    targetGroups: []
 })
 const editingName = ref(false)
 const nameInputRef = ref(null)
@@ -88,9 +84,6 @@ const scenarioNameValue = computed({
     },
     set(value) {
         scenario.name = value
-        if (scenario.autoLight?.state) {
-            scenario.autoLight.state.name = value
-        }
     }
 })
 
@@ -152,13 +145,6 @@ function toggleDay(value) {
     scenario.time = {
         ...(scenario.time || {}),
         days: nextDays
-    }
-    if (scenario.autoLight?.state) {
-        scenario.autoLight.state.time = {
-            ...(scenario.autoLight.state.time || {}),
-            start: timeFromStop(startStop),
-            end: timeFromStop(endStop)
-        }
     }
 }
 
@@ -308,21 +294,11 @@ function timeFromStop(stop) {
 }
 
 function applyStopsFromScenario() {
-    const hasState = Boolean(scenarioHasAutoState.value && scenario.autoLight?.state)
-    const state = hasState ? scenario.autoLight.state : {}
-    if (hasState && state.startStop) applyStop(startStop, state.startStop)
-    if (hasState && state.endStop) applyStop(endStop, state.endStop)
-    const startSource = hasState && state.time?.start ? state.time.start : scenario.time?.start
-    const endSource = hasState && state.time?.end ? state.time.end : scenario.time?.end
+    const startSource = scenario.time?.start
+    const endSource = scenario.time?.end
     if (startSource) updateStopFromTime(startStop, startSource)
     if (endSource) updateStopFromTime(endStop, endSource)
-    if (hasState) {
-        if ('autoBrightness' in state) {
-            if (!applyAutoBrightnessState(state.autoBrightness)) resetAutoBrightness()
-        } else {
-            resetAutoBrightness()
-        }
-    }
+    hydrateStopsFromActions(scenario.actions || [])
 }
 
 function hydrateStopsFromActions(actions) {
@@ -420,20 +396,16 @@ applyStopsFromScenario()
 function clearSelectionSources() {
     selectionSources.targetDevices = []
     selectionSources.targetGroups = []
-    selectionSources.stateDevices = []
 }
 
 function captureSelectionSourcesFromScenario(source = scenario) {
     selectionSources.targetDevices = Array.isArray(source.target?.devices) ? [...source.target.devices] : []
     selectionSources.targetGroups = Array.isArray(source.target?.groups) ? [...source.target.groups] : []
-    const stateDevices = source.autoLight?.state?.selectedDevices
-    selectionSources.stateDevices = Array.isArray(stateDevices) ? [...stateDevices] : []
 }
 
 function resolveScenarioSelection() {
     const groupSet = new Set(selectionSources.targetGroups || [])
     const deviceSet = new Set(selectionSources.targetDevices || [])
-        ; (selectionSources.stateDevices || []).forEach((id) => deviceSet.add(id))
     applyGroupMembersToDevices(deviceSet, groupSet)
     return { groups: groupSet, devices: deviceSet }
 }
@@ -637,6 +609,79 @@ const dragState = reactive({
     accumulatedMinutes: 0,
     handleStartMinutes: 0
 })
+const HANDLE_TAP_HOLD_MS = 300
+const HANDLE_TAP_MOVE_TOLERANCE = 6
+const handleTapGuards = {
+    start: createTapGuard(),
+    end: createTapGuard()
+}
+
+function createTapGuard() {
+    return {
+        downAt: 0,
+        moved: false,
+        holdExceeded: false,
+        timer: null,
+        startX: 0,
+        startY: 0
+    }
+}
+
+function beginHandleTapTracking(type, event) {
+    const guard = handleTapGuards[type]
+    if (!guard) return
+    if (guard.timer) {
+        clearTimeout(guard.timer)
+        guard.timer = null
+    }
+    guard.downAt = performance.now()
+    guard.moved = false
+    guard.holdExceeded = false
+    guard.startX = event?.clientX ?? 0
+    guard.startY = event?.clientY ?? 0
+    guard.timer = setTimeout(() => {
+        guard.holdExceeded = true
+    }, HANDLE_TAP_HOLD_MS)
+}
+
+function markHandleTapMoved(type, event) {
+    const guard = handleTapGuards[type]
+    if (!guard || guard.moved || !event) return
+    const dx = (event.clientX ?? 0) - (guard.startX ?? 0)
+    const dy = (event.clientY ?? 0) - (guard.startY ?? 0)
+    if (Math.hypot(dx, dy) >= HANDLE_TAP_MOVE_TOLERANCE) {
+        guard.moved = true
+    }
+}
+
+function releaseHandleTapTracking(type) {
+    const guard = handleTapGuards[type]
+    if (guard?.timer) {
+        clearTimeout(guard.timer)
+        guard.timer = null
+    }
+    guard.holdExceeded = false
+    guard.moved = false
+    guard.downAt = 0
+    guard.startX = 0
+    guard.startY = 0
+}
+
+function shouldOpenHandleEditor(type) {
+    const guard = handleTapGuards[type]
+    if (!guard) return true
+    const downAt = guard.downAt
+    const allow =
+        downAt !== 0 && !guard.holdExceeded && !guard.moved && performance.now() - downAt <= HANDLE_TAP_HOLD_MS
+    guard.downAt = 0
+    guard.moved = false
+    guard.holdExceeded = false
+    if (guard.timer) {
+        clearTimeout(guard.timer)
+        guard.timer = null
+    }
+    return allow
+}
 const dialScale = computed(() => {
     const size = dialMetrics.size || baseDialSize
     const scale = size / baseDialSize
@@ -672,6 +717,7 @@ function handlePointerDown(type, event) {
         dragState.activePointerMinutes = pointerMinutes
         dragState.accumulatedMinutes = 0
         dragState.handleStartMinutes = type === 'start' ? startAnchorMinutes.value : endAnchorMinutes.value
+        beginHandleTapTracking(type, event)
     } else {
         dragState.activePointerMinutes = pointerMinutes
         dragState.accumulatedMinutes = 0
@@ -691,6 +737,7 @@ function handlePointerMove(event) {
     const nextMinutes = normalizeMinutes(dragState.handleStartMinutes + dragState.accumulatedMinutes)
     const snappedMinutes = snapMinutes(nextMinutes)
     if (draggingHandle.value === 'start') {
+        markHandleTapMoved('start', event)
         if (suppressedSnapHandle.value === 'start') {
             toClockMode(startStop, snappedMinutes)
             suppressedSnapHandle.value = null
@@ -698,6 +745,7 @@ function handlePointerMove(event) {
         }
         applyMinutes(startStop, snappedMinutes)
     } else if (draggingHandle.value === 'end') {
+        markHandleTapMoved('end', event)
         if (suppressedSnapHandle.value === 'end') {
             toClockMode(endStop, snappedMinutes)
             suppressedSnapHandle.value = null
@@ -713,7 +761,15 @@ function handlePointerMove(event) {
 
 function stopDragging(event) {
     if (!draggingHandle.value) return
+    const activeHandle = draggingHandle.value
     event?.target?.releasePointerCapture?.(event.pointerId)
+    if (activeHandle === 'start' || activeHandle === 'end') {
+        const tapAllowed = event?.type === 'pointerup' && shouldOpenHandleEditor(activeHandle)
+        releaseHandleTapTracking(activeHandle)
+        if (tapAllowed) {
+            openModal('state', activeHandle === 'start' ? 'start' : 'end')
+        }
+    }
     draggingHandle.value = null
     suppressedSnapHandle.value = null
     activeDialSnapshot = null
@@ -1315,25 +1371,31 @@ function buildScenarioPayload() {
     payload.time.start = timeFromStop(startStop)
     payload.time.end = timeFromStop(endStop)
     payload.actions = buildScenarioActions()
-    payload.autoLight = payload.autoLight || {}
-    payload.autoLight.state = {
-        startStop: serializeStop(startStop),
-        endStop: serializeStop(endStop),
-        time: {
-            start: payload.time.start,
-            end: payload.time.end
-        },
-        selectedDevices: Array.from(selectedDevicesIds.value),
-        autoBrightness: {
-            enabled: !!autoBrightness.enabled,
-            sensorId: autoBrightness.sensorId || '',
-            luxMin: autoBrightness.luxMin,
-            luxMax: autoBrightness.luxMax,
-            brightnessMin: autoBrightness.brightnessMin,
-            brightnessMax: autoBrightness.brightnessMax
+    const scenarioType = typeof payload.type === 'string' ? payload.type : ''
+    const isAutoLightScenario = /auto-light/i.test(scenarioType)
+    if (isAutoLightScenario) {
+        payload.autoLight = payload.autoLight || {}
+        payload.autoLight.state = {
+            startStop: serializeStop(startStop),
+            endStop: serializeStop(endStop),
+            time: {
+                start: payload.time.start,
+                end: payload.time.end
+            },
+            selectedDevices: Array.from(selectedDevicesIds.value),
+            autoBrightness: {
+                enabled: !!autoBrightness.enabled,
+                sensorId: autoBrightness.sensorId || '',
+                luxMin: autoBrightness.luxMin,
+                luxMax: autoBrightness.luxMax,
+                brightnessMin: autoBrightness.brightnessMin,
+                brightnessMax: autoBrightness.brightnessMax
+            }
         }
+        if (autoBrightness.sensorId) payload.autoLight.sensorId = autoBrightness.sensorId
+    } else {
+        delete payload.autoLight
     }
-    if (autoBrightness.sensorId) payload.autoLight.sensorId = autoBrightness.sensorId
     payload.runtime = payload.runtime || {}
     payload.runtime.presence = presenceMode.value === 'home' ? 'onlyWhenHome' : 'always'
     payload.disabled = scenarioStatus.value === 'off'
@@ -1411,9 +1473,9 @@ function resetScenarioState() {
     Object.assign(scenario, createDefaultScenario())
     scenario.id = ''
     scenario.name = ''
+    scenario.type = 'scenario-v1'
     selectedDevicesIds.value = new Set()
     selectionDirty.value = false
-    scenarioHasAutoState.value = true
     clearSelectionSources()
     captureSelectionSourcesFromScenario()
     resetAutoBrightness()
@@ -1443,13 +1505,9 @@ async function loadScenarioById(id) {
         scenario.id = data.id || ''
         scenario.name = data.name || ''
         presenceMode.value = scenario.runtime?.presence === 'onlyWhenHome' ? 'home' : 'any'
-        const remoteStatus = scenario.autoLight?.state?.status === 'PAUSE' ? 'paused' : 'running'
-        scenarioStatus.value = scenario.disabled ? 'off' : remoteStatus
-        const hasAutoState = Boolean(data?.autoLight?.state && typeof data.autoLight.state === 'object')
-        scenarioHasAutoState.value = hasAutoState
+        scenarioStatus.value = scenario.disabled ? 'off' : 'running'
         captureSelectionSourcesFromScenario()
         selectionDirty.value = false
-        if (!hasAutoState) hydrateStopsFromActions(scenario.actions || [])
         applyStopsFromScenario()
         syncSelectedDevicesFromSources(true)
         editingName.value = false
@@ -1471,13 +1529,9 @@ async function saveScenario() {
             normalizeScenarioStruct(scenario)
             scenario.id = response.scenario.id || scenario.id
             scenario.name = response.scenario.name || scenario.name
-            const hasState = Boolean(response.scenario.autoLight?.state && typeof response.scenario.autoLight.state === 'object')
-            scenarioHasAutoState.value = hasState
             captureSelectionSourcesFromScenario()
-            if (!hasState) hydrateStopsFromActions(scenario.actions || [])
         }
-        const remoteStatus = scenario.autoLight?.state?.status === 'PAUSE' ? 'paused' : 'running'
-        scenarioStatus.value = scenario.disabled ? 'off' : remoteStatus
+        scenarioStatus.value = scenario.disabled ? 'off' : 'running'
         applyStopsFromScenario()
         if (!selectionDirty.value) syncSelectedDevicesFromSources(false)
         scenarioMessage.value = 'Сценарий сохранен'
@@ -1897,7 +1951,7 @@ async function handleDelete() {
                     :end-offset-style="endOffsetStyle" :gradient-start-color="dialGradientStops.start"
                     :gradient-end-color="dialGradientStops.end" :gradient-coords="scenarioGradientCoords"
                     :dial-face-ratio="dialFaceRatio" :sunrise-marker="sunriseMarker" :sunset-marker="sunsetMarker"
-                    @open-start-editor="openModal('state', 'start')" @open-end-editor="openModal('state', 'end')"
+@open-start-editor="openModal('state', 'start')" @open-end-editor="openModal('state', 'end')"
                     @resume="scenarioStatus = 'running'" @pointer-move="handlePointerMove" @pointer-up="stopDragging"
                     @pointer-cancel="stopDragging" @pointer-leave="stopDragging"
                     @start-pointerdown="(event) => handlePointerDown('start', event)"
@@ -2168,11 +2222,11 @@ async function handleDelete() {
 .sheet-panel {
     position: relative;
     width: min(520px, 100%);
-    max-height: 90vh;
+    max-height: 80vh;
     background: var(--surface-card);
-    border-top-left-radius: 28px;
-    border-top-right-radius: 28px;
-    padding-bottom: 24px;
+    border-top-left-radius: 16px;
+    border-top-right-radius: 16px;
+    padding-bottom: 18px;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -2190,6 +2244,7 @@ async function handleDelete() {
     from {
         transform: translateY(100%);
     }
+
     to {
         transform: translateY(0);
     }
@@ -2199,6 +2254,7 @@ async function handleDelete() {
     from {
         transform: translateY(var(--sheet-current-translate, 0));
     }
+
     to {
         transform: translateY(100%);
     }
@@ -2208,7 +2264,7 @@ async function handleDelete() {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 16px 20px;
+    padding: 12px 16px;
     border-bottom: 1px solid var(--surface-border);
     touch-action: none;
     cursor: grab;
@@ -2228,11 +2284,11 @@ async function handleDelete() {
 }
 
 .sheet-content {
-    padding: 16px 20px 40px;
+    padding: 12px 16px 26px;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 10px;
     overflow-y: auto;
-    max-height: calc(90vh - 80px);
+    max-height: calc(80vh - 70px);
 }
 </style>

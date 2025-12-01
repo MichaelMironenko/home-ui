@@ -19,14 +19,14 @@ import {
     PAUSE_REASON_TEXT
 } from '../utils/autoLightConstants'
 import {
-    createDefaultScenario,
-    normalizeScenarioStruct,
-    computeEnvironment,
+    createDefaultAutoLightScenario,
+    normalizeAutoLightScenarioStruct,
     convertCurveToPercent,
     luxToNormalized,
-    buildDerivedLocal,
+    buildDerivedAutoLightLocal,
     computeCctBaseSegments
-} from '../utils/scenarioUtils'
+} from '../utils/autoLightUtils'
+import { computeEnvironment } from '../utils/scenarioUtils'
 import { clampNumber } from '../utils/num'
 import { piecewiseLinear } from '../utils/piecewise'
 
@@ -44,8 +44,8 @@ const catalog = reactive({
     rooms: []
 })
 
-const scenario = reactive(createDefaultScenario())
-const derived = ref(buildDerivedLocal(scenario))
+const scenario = reactive(createDefaultAutoLightScenario())
+const derived = ref(buildDerivedAutoLightLocal(scenario))
 const pauseInfo = ref(null)
 const statusInfo = ref(null)
 const loading = ref(true)
@@ -307,9 +307,9 @@ const temperatureSnapshot = () => {
 function hydrateScenarioFromResponse(response) {
     if (response?.scenario) {
         Object.assign(scenario, response.scenario)
-        normalizeScenarioStruct(scenario)
+        normalizeAutoLightScenarioStruct(scenario)
     }
-    derived.value = response?.derived || buildDerivedLocal(scenario)
+    derived.value = response?.derived || buildDerivedAutoLightLocal(scenario)
     if (response?.pause !== undefined || response?.result?.pause !== undefined) {
         pauseInfo.value = response?.pause ?? response?.result?.pause ?? null
     }
@@ -652,7 +652,7 @@ function resetCurve(kind) {
         scenario.autoLight.cctOverrides = []
         message.value = 'Температурные поправки сброшены'
     }
-    derived.value = buildDerivedLocal(scenario)
+    derived.value = buildDerivedAutoLightLocal(scenario)
 }
 
 const brightnessChart = computed(() => {
@@ -708,8 +708,8 @@ async function loadScenario(id) {
     brightnessControl.reset()
     temperatureControl.reset()
     if (!id) {
-        Object.assign(scenario, createDefaultScenario())
-        derived.value = buildDerivedLocal(scenario)
+        Object.assign(scenario, createDefaultAutoLightScenario())
+        derived.value = buildDerivedAutoLightLocal(scenario)
         pauseInfo.value = null
         statusInfo.value = null
         wasSaved.value = false
@@ -717,9 +717,9 @@ async function loadScenario(id) {
     }
     const data = await scenarioRequest(`/scenario?id=${encodeURIComponent(id)}`)
     if (data?.scenario) {
-        Object.assign(scenario, createDefaultScenario(), data.scenario)
+        Object.assign(scenario, createDefaultAutoLightScenario(), data.scenario)
     }
-    normalizeScenarioStruct(scenario)
+    normalizeAutoLightScenarioStruct(scenario)
     if (!scenario.id) {
         scenario.id = 'autolight'
     }
@@ -866,7 +866,7 @@ async function toggleDisabled() {
         scenario.disabled = !nextDisabled
         error.value = err?.message || String(err)
         console.error('[auto-light] toggle disabled failed', err)
-        derived.value = buildDerivedLocal(scenario)
+        derived.value = buildDerivedAutoLightLocal(scenario)
     }
 }
 
