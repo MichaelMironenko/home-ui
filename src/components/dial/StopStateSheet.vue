@@ -1,9 +1,13 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import { applyBrightnessMode } from '../../utils/stopStateRules'
 
 const props = defineProps({
+    open: {
+        type: Boolean,
+        default: false
+    },
     stop: {
         type: Object,
         required: true
@@ -26,10 +30,77 @@ const props = defineProps({
     }
 })
 
+const emit = defineEmits(['close'])
+
 const isStartContext = computed(() => props.context !== 'end')
 const autoMode = computed(() => Boolean(props.autoBrightness?.enabled))
 const temperatureGradient = 'linear-gradient(90deg, #ff9b0a 0%, #fffbe8 70%, #c8edff 100%)'
 const brightnessGradient = 'linear-gradient(90deg, rgba(255,255,255,0.3) 0%, rgba(255,255,255,1) 100%)'
+const sheetTitle = computed(() => (props.context === 'end' ? 'Финальное состояние' : 'Стартовое состояние'))
+
+const sheetClosing = ref(false)
+const sheetTranslate = ref(0)
+const sheetDragStartY = ref(null)
+const sheetDragActive = ref(false)
+const sheetDragElement = ref(null)
+
+watch(
+    () => props.open,
+    (open) => {
+        if (!open) resetSheetState()
+    }
+)
+
+function resetSheetState() {
+    sheetClosing.value = false
+    sheetTranslate.value = 0
+    sheetDragStartY.value = null
+    sheetDragActive.value = false
+    sheetDragElement.value = null
+}
+
+function requestClose() {
+    sheetClosing.value = true
+    sheetTranslate.value = 200
+    setTimeout(() => {
+        resetSheetState()
+        emit('close')
+    }, 250)
+}
+
+function startSheetDrag(event) {
+    if (event.pointerType === 'mouse') return
+    sheetDragStartY.value = event.clientY
+    sheetDragActive.value = true
+    sheetDragElement.value = event.currentTarget
+    sheetDragElement.value?.setPointerCapture?.(event.pointerId)
+}
+
+function handleSheetDrag(event) {
+    if (!sheetDragActive.value || sheetDragStartY.value == null) return
+    if (event.pointerType === 'mouse') return
+    event.preventDefault()
+    const delta = event.clientY - sheetDragStartY.value
+    sheetTranslate.value = Math.max(0, delta)
+}
+
+function endSheetDrag(event) {
+    if (!sheetDragActive.value) return
+    sheetDragElement.value?.releasePointerCapture?.(event.pointerId)
+    if (sheetTranslate.value > 120) {
+        requestClose()
+    } else {
+        sheetTranslate.value = 0
+    }
+    sheetDragActive.value = false
+    sheetDragStartY.value = null
+    sheetDragElement.value = null
+}
+
+const sheetTransform = computed(() => {
+    const translate = Math.max(sheetTranslate.value, 0)
+    return `translateY(${translate}px)`
+})
 
 function toggle(prop) {
     if (!isStartContext.value) return
@@ -61,126 +132,216 @@ function lock(value, min, max) {
 </script>
 
 <template>
-    <div class="stop-editor">
-        <section v-if="isStartContext || stop.useColor" class="control-block">
-            <div class="block-header">
-                <div>
-                    <p>{{ isStartContext ? 'Изменять цвет' : 'Цвет' }}</p>
-                    <small v-if="isStartContext">Отключите, если нужен только диммирование</small>
+    <Teleport to="body">
+        <div v-if="open" class="stop-sheet-overlay" @touchmove.passive>
+            <div class="stop-sheet-backdrop" @click="requestClose" />
+            <div class="stop-sheet-panel" :class="{ closing: sheetClosing }" :style="{ transform: sheetTransform }">
+                <header class="stop-sheet-header" @pointerdown="startSheetDrag" @pointermove="handleSheetDrag"
+                    @pointerup="endSheetDrag" @pointercancel="endSheetDrag">
+                    <button type="button" class="stop-sheet-close" @click="requestClose">Закрыть</button>
+                    <h3>{{ sheetTitle }}</h3>
+                </header>
+                <div class="stop-sheet-content">
+                    <div class="stop-editor">
+                        <section v-if="isStartContext || stop.useColor" class="control-block">
+                            <div class="block-header">
+                                <div>
+                                    <p>{{ isStartContext ? 'Изменять цвет' : 'Цвет' }}</p>
+                                    <small v-if="isStartContext">Отключите, если нужен только диммирование</small>
+                                </div>
+                                <button v-if="isStartContext" type="button" class="toggle" :class="{ active: stop.useColor }"
+                                    @click="toggle('useColor')">
+                                    <span />
+                                </button>
+                            </div>
+                            <template v-if="stop.useColor">
+                                <div class="segmented" v-if="isStartContext">
+                                    <button type="button" :class="{ active: stop.colorMode === 'temperature' }"
+                                        @click="setColorMode('temperature')">
+                                        Температура
+                                    </button>
+                                    <button type="button" :class="{ active: stop.colorMode === 'rgb' }"
+                                        @click="setColorMode('rgb')">Цвет</button>
+                                </div>
+                                <div v-if="stop.colorMode === 'temperature'" class="slider-block">
+                                    <label>
+                                        {{ stop.temperature }}K
+                                        <input class="gradient-range" type="range" min="1700" max="6500" step="100"
+                                            :style="{ '--range-gradient': temperatureGradient }" :value="stop.temperature"
+                                            @input="updateTemperature($event.target.value)" />
+                                    </label>
+                                </div>
+                                <div v-else class="palette">
+                                    <button v-for="color in palette" :key="color" type="button" class="swatch"
+                                        :class="{ active: stop.colorHex === color }"
+                                        :style="{ background: color }"
+                                        @click="stop.colorHex = color" />
+                                    <label class="custom-color">
+                                        <input type="color" :value="stop.colorHex" @input="stop.colorHex = $event.target.value" />
+                                        <span>{{ stop.colorHex?.toUpperCase?.() }}</span>
+                                    </label>
+                                </div>
+                            </template>
+                            <p v-else class="block-hint">Цвет не изменяется</p>
+                        </section>
+
+                        <section v-if="isStartContext || stop.useBrightness" class="control-block">
+                            <div class="block-header">
+                                <div>
+                                    <p>{{ isStartContext ? 'Изменять яркость' : 'Яркость' }}</p>
+                                    <small v-if="isStartContext">Переключитесь на автояркость, чтобы связать её с датчиком</small>
+                                </div>
+                                <button v-if="isStartContext" type="button" class="toggle"
+                                    :class="{ active: stop.useBrightness }" @click="toggle('useBrightness')">
+                                    <span />
+                                </button>
+                            </div>
+                            <template v-if="stop.useBrightness">
+                                <div class="segmented" v-if="isStartContext">
+                                    <button type="button" :class="{ active: !autoMode }"
+                                        @click="setBrightnessMode('manual')">Ручной</button>
+                                    <button type="button" :class="{ active: autoMode }"
+                                        @click="setBrightnessMode('auto')">Авто</button>
+                                </div>
+
+                                <div v-if="autoMode">
+                                    <template v-if="isStartContext">
+                                        <label class="field">
+                                            Датчик освещенности
+                                            <select v-model="autoBrightness.sensorId">
+                                                <option v-if="!sensorOptions.length" disabled value="">Нет датчиков</option>
+                                                <option v-for="sensor in sensorOptions" :key="sensor.id" :value="sensor.id">
+                                                    {{ sensor.name }}
+                                                </option>
+                                            </select>
+                                        </label>
+                                        <div class="range-pair">
+                                            <label class="field">
+                                                Минимум, лк
+                                                <input type="number" min="0" :max="autoBrightness.luxMax - 10"
+                                                    v-model.number="autoBrightness.luxMin"
+                                                    @change="autoBrightness.luxMin = lock(autoBrightness.luxMin, 0, autoBrightness.luxMax - 10)" />
+                                            </label>
+                                            <label class="field">
+                                                Максимум, лк
+                                                <input type="number" :min="autoBrightness.luxMin + 10"
+                                                    v-model.number="autoBrightness.luxMax"
+                                                    @change="autoBrightness.luxMax = lock(autoBrightness.luxMax, autoBrightness.luxMin + 10, 1000)" />
+                                            </label>
+                                        </div>
+                                        <div class="range-pair">
+                                            <label class="field">
+                                                Яркость при мин.
+                                                <input type="number" min="1" :max="autoBrightness.brightnessMax"
+                                                    v-model.number="autoBrightness.brightnessMin"
+                                                    @change="autoBrightness.brightnessMin = lock(autoBrightness.brightnessMin, 1, autoBrightness.brightnessMax)" />
+                                            </label>
+                                            <label class="field">
+                                                Яркость при макс.
+                                                <input type="number" :min="autoBrightness.brightnessMin" max="100"
+                                                    v-model.number="autoBrightness.brightnessMax"
+                                                    @change="autoBrightness.brightnessMax = lock(autoBrightness.brightnessMax, autoBrightness.brightnessMin, 100)" />
+                                            </label>
+                                        </div>
+                                    </template>
+                                    <p v-else class="auto-note">Автояркость по датчику. Для редактирования выберите стартовое
+                                        состояние.
+                                    </p>
+                                </div>
+
+                                <div v-else class="slider-block">
+                                    <label>
+                                        {{ stop.brightness }}%
+                                        <input class="gradient-range" type="range" min="1" max="100"
+                                            :style="{ '--range-gradient': brightnessGradient }" :value="stop.brightness"
+                                            @input="updateBrightness($event.target.value)" />
+                                    </label>
+                                </div>
+                            </template>
+                            <p v-else class="block-hint">Яркость не изменяется</p>
+                        </section>
+                    </div>
                 </div>
-                <button v-if="isStartContext" type="button" class="toggle" :class="{ active: stop.useColor }"
-                    @click="toggle('useColor')">
-                    <span />
-                </button>
             </div>
-            <template v-if="stop.useColor">
-                <div class="segmented" v-if="isStartContext">
-                    <button type="button" :class="{ active: stop.colorMode === 'temperature' }"
-                        @click="setColorMode('temperature')">
-                        Температура
-                    </button>
-                    <button type="button" :class="{ active: stop.colorMode === 'rgb' }"
-                        @click="setColorMode('rgb')">Цвет</button>
-                </div>
-                <div v-if="stop.colorMode === 'temperature'" class="slider-block">
-                    <label>
-                        {{ stop.temperature }}K
-                        <input class="gradient-range" type="range" min="1700" max="6500" step="100"
-                            :style="{ '--range-gradient': temperatureGradient }" :value="stop.temperature"
-                            @input="updateTemperature($event.target.value)" />
-                    </label>
-                </div>
-                <div v-else class="palette">
-                    <button v-for="color in palette" :key="color" type="button" class="swatch"
-                        :class="{ active: stop.colorHex === color }"
-                        :style="{ background: color }"
-                        @click="stop.colorHex = color" />
-                    <label class="custom-color">
-                        <input type="color" :value="stop.colorHex" @input="stop.colorHex = $event.target.value" />
-                        <span>{{ stop.colorHex?.toUpperCase?.() }}</span>
-                    </label>
-                </div>
-            </template>
-            <p v-else class="block-hint">Цвет не изменяется</p>
-        </section>
-
-        <section v-if="isStartContext || stop.useBrightness" class="control-block">
-            <div class="block-header">
-                <div>
-                    <p>{{ isStartContext ? 'Изменять яркость' : 'Яркость' }}</p>
-                    <small v-if="isStartContext">Переключитесь на автояркость, чтобы связать её с датчиком</small>
-                </div>
-                <button v-if="isStartContext" type="button" class="toggle" :class="{ active: stop.useBrightness }"
-                    @click="toggle('useBrightness')">
-                    <span />
-                </button>
-            </div>
-            <template v-if="stop.useBrightness">
-                <div class="segmented" v-if="isStartContext">
-                    <button type="button" :class="{ active: !autoMode }"
-                        @click="setBrightnessMode('manual')">Ручной</button>
-                    <button type="button" :class="{ active: autoMode }" @click="setBrightnessMode('auto')">Авто</button>
-                </div>
-
-                <div v-if="autoMode">
-                    <template v-if="isStartContext">
-                        <label class="field">
-                            Датчик освещенности
-                            <select v-model="autoBrightness.sensorId">
-                                <option v-if="!sensorOptions.length" disabled value="">Нет датчиков</option>
-                                <option v-for="sensor in sensorOptions" :key="sensor.id" :value="sensor.id">
-                                    {{ sensor.name }}
-                                </option>
-                            </select>
-                        </label>
-                        <div class="range-pair">
-                            <label class="field">
-                                Минимум, лк
-                                <input type="number" min="0" :max="autoBrightness.luxMax - 10"
-                                    v-model.number="autoBrightness.luxMin"
-                                    @change="autoBrightness.luxMin = lock(autoBrightness.luxMin, 0, autoBrightness.luxMax - 10)" />
-                            </label>
-                            <label class="field">
-                                Максимум, лк
-                                <input type="number" :min="autoBrightness.luxMin + 10"
-                                    v-model.number="autoBrightness.luxMax"
-                                    @change="autoBrightness.luxMax = lock(autoBrightness.luxMax, autoBrightness.luxMin + 10, 1000)" />
-                            </label>
-                        </div>
-                        <div class="range-pair">
-                            <label class="field">
-                                Яркость при мин.
-                                <input type="number" min="1" :max="autoBrightness.brightnessMax"
-                                    v-model.number="autoBrightness.brightnessMin"
-                                    @change="autoBrightness.brightnessMin = lock(autoBrightness.brightnessMin, 1, autoBrightness.brightnessMax)" />
-                            </label>
-                            <label class="field">
-                                Яркость при макс.
-                                <input type="number" :min="autoBrightness.brightnessMin" max="100"
-                                    v-model.number="autoBrightness.brightnessMax"
-                                    @change="autoBrightness.brightnessMax = lock(autoBrightness.brightnessMax, autoBrightness.brightnessMin, 100)" />
-                            </label>
-                        </div>
-                    </template>
-                    <p v-else class="auto-note">Автояркость по датчику. Для редактирования выберите стартовое состояние.
-                    </p>
-                </div>
-
-                <div v-else class="slider-block">
-                    <label>
-                        {{ stop.brightness }}%
-                        <input class="gradient-range" type="range" min="1" max="100"
-                            :style="{ '--range-gradient': brightnessGradient }" :value="stop.brightness"
-                            @input="updateBrightness($event.target.value)" />
-                    </label>
-                </div>
-            </template>
-            <p v-else class="block-hint">Яркость не изменяется</p>
-        </section>
-    </div>
+        </div>
+    </Teleport>
 </template>
 
 <style scoped>
+.stop-sheet-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    pointer-events: auto;
+}
+
+.stop-sheet-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+}
+
+.stop-sheet-panel {
+    position: relative;
+    width: min(560px, 100%);
+    background: #0d1322;
+    border-radius: 28px 28px 0 0;
+    padding-bottom: 32px;
+    animation: stop-sheet-slide-in 0.3s ease-out forwards;
+    transform: translateY(0);
+}
+
+.stop-sheet-panel.closing {
+    animation: stop-sheet-slide-out 0.25s ease-in forwards;
+}
+
+@keyframes stop-sheet-slide-in {
+    from {
+        transform: translateY(100%);
+    }
+
+    to {
+        transform: translateY(0);
+    }
+}
+
+@keyframes stop-sheet-slide-out {
+    from {
+        transform: translateY(0);
+    }
+
+    to {
+        transform: translateY(100%);
+    }
+}
+
+.stop-sheet-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px 8px;
+    cursor: grab;
+}
+
+.stop-sheet-header h3 {
+    margin: 0;
+}
+
+.stop-sheet-close {
+    border: none;
+    background: transparent;
+    color: #f8fafc;
+    font-size: 16px;
+    cursor: pointer;
+}
+
+.stop-sheet-content {
+    padding: 0 24px 24px;
+}
+
 .stop-editor {
     display: flex;
     flex-direction: column;
