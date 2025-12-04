@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, toRaw, watch } from 'vue'
 import { blendHex, hexToRgb, stopColorHex } from '../../utils/colorUtils'
 
 const props = defineProps({
@@ -41,7 +41,14 @@ const props = defineProps({
     }
 })
 
-const emit = defineEmits(['open-start-editor', 'open-end-editor', 'resume'])
+const emit = defineEmits([
+    'open-start-editor',
+    'open-end-editor',
+    'resume',
+    'update:start-stop',
+    'update:end-stop',
+    'change'
+])
 
 const BASE_DIAL_SIZE = 320
 const FACE_CENTER = 100
@@ -52,14 +59,19 @@ const HANDLE_TAP_HOLD_MS = 300
 const HANDLE_TAP_MOVE_TOLERANCE = 6
 const minuteStep = 5
 const OFFSET_LIMIT = 60
+const MINUTES_PER_DAY = 1440
+const HALF_DAY_MINUTES = MINUTES_PER_DAY / 2
+const FULL_CIRCLE_DEG = 360
+const HANDLE_EMIT_THROTTLE_MS = 80
 
 const dialElement = ref(null)
 const dialMetrics = reactive({
     size: BASE_DIAL_SIZE,
-    radius: BASE_DIAL_SIZE / 2,
-    centerX: 0,
-    centerY: 0
+    radius: BASE_DIAL_SIZE / 2
 })
+let dialCenterX = 0
+let dialCenterY = 0
+let metricsReadHandle = 0
 const resizeObserver = ref(null)
 
 const draggingHandle = ref('')
@@ -72,6 +84,26 @@ const dragState = reactive({
 const handleTapGuards = {
     start: createTapGuard(),
     end: createTapGuard()
+}
+
+const localStartStop = reactive({})
+const localEndStop = reactive({})
+
+watch(
+    () => props.startStop,
+    (value) => syncStopState(localStartStop, value),
+    { deep: true, immediate: true }
+)
+
+watch(
+    () => props.endStop,
+    (value) => syncStopState(localEndStop, value),
+    { deep: true, immediate: true }
+)
+
+const stopEmitState = {
+    start: { dirty: false, lastEmit: 0 },
+    end: { dirty: false, lastEmit: 0 }
 }
 
 const draggingPrimaryHandle = computed(
@@ -100,20 +132,20 @@ const offsetHandleSize = computed(() => Math.max(20, 24 * dialScale.value))
 const offsetHandleBorderWidth = computed(() => Math.max(0.75, dialScale.value * 0.8))
 const offsetRingStrokeWidth = computed(() => Math.max(6, 12 * dialScale.value))
 
-const startMinutes = computed(() => stopMinutes(props.startStop))
-const endMinutes = computed(() => stopMinutes(props.endStop))
-const startAnchorMinutes = computed(() => stopAnchorMinutes(props.startStop))
-const endAnchorMinutes = computed(() => stopAnchorMinutes(props.endStop))
-const startLabel = computed(() => stopLabel(props.startStop))
-const endLabel = computed(() => stopLabel(props.endStop))
+const startMinutes = computed(() => stopMinutes(localStartStop))
+const endMinutes = computed(() => stopMinutes(localEndStop))
+const startAnchorMinutes = computed(() => stopAnchorMinutes(localStartStop))
+const endAnchorMinutes = computed(() => stopAnchorMinutes(localEndStop))
+const startLabel = computed(() => stopLabel(localStartStop))
+const endLabel = computed(() => stopLabel(localEndStop))
 const startLabelCompact = computed(
-    () => props.startStop?.mode !== 'clock' && (props.startStop?.offset || 0) !== 0
+    () => localStartStop?.mode !== 'clock' && (localStartStop?.offset || 0) !== 0
 )
 const endLabelCompact = computed(
-    () => props.endStop?.mode !== 'clock' && (props.endStop?.offset || 0) !== 0
+    () => localEndStop?.mode !== 'clock' && (localEndStop?.offset || 0) !== 0
 )
-const gradientStartColor = computed(() => stopColorHex(props.startStop))
-const gradientEndColor = computed(() => stopColorHex(props.endStop))
+const gradientStartColor = computed(() => stopColorHex(localStartStop))
+const gradientEndColor = computed(() => stopColorHex(localEndStop))
 const dialInactive = computed(() => ['off', 'paused'].includes(props.scenarioStatus))
 const isPaused = computed(() => props.scenarioStatus === 'paused')
 
@@ -124,35 +156,66 @@ function readDialMetrics() {
     const size = Math.min(rect.width, rect.height)
     dialMetrics.size = size
     dialMetrics.radius = size / 2
-    dialMetrics.centerX = rect.left + rect.width / 2
-    dialMetrics.centerY = rect.top + rect.height / 2
+    dialCenterX = rect.left + rect.width / 2
+    dialCenterY = rect.top + rect.height / 2
+}
+
+function scheduleReadDialMetrics() {
+    if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+        readDialMetrics()
+        return
+    }
+    if (metricsReadHandle) return
+    metricsReadHandle = window.requestAnimationFrame(() => {
+        metricsReadHandle = 0
+        readDialMetrics()
+    })
+}
+
+function handleWindowResize() {
+    scheduleReadDialMetrics()
+}
+
+function handleWindowScroll() {
+    scheduleReadDialMetrics()
 }
 
 onMounted(() => {
     readDialMetrics()
     if (typeof ResizeObserver !== 'undefined') {
-        resizeObserver.value = new ResizeObserver(() => readDialMetrics())
-        if (dialElement.value) resizeObserver.value.observe(dialElement.value)
+        resizeObserver.value = new ResizeObserver(() => scheduleReadDialMetrics())
+        if (dialElement.value) {
+            resizeObserver.value.observe(dialElement.value)
+        }
     }
     if (typeof window !== 'undefined') {
-        window.addEventListener('resize', readDialMetrics)
-        window.addEventListener('scroll', readDialMetrics, { passive: true })
+        window.addEventListener('resize', handleWindowResize)
+        window.addEventListener('scroll', handleWindowScroll, { passive: true })
     }
 })
 
 onUnmounted(() => {
+    if (metricsReadHandle && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+        window.cancelAnimationFrame(metricsReadHandle)
+        metricsReadHandle = 0
+    }
     resizeObserver.value?.disconnect()
     if (typeof window !== 'undefined') {
-        window.removeEventListener('resize', readDialMetrics)
-        window.removeEventListener('scroll', readDialMetrics)
+        window.removeEventListener('resize', handleWindowResize)
+        window.removeEventListener('scroll', handleWindowScroll)
     }
 })
 
 watch(
     () => dialElement.value,
-    (el) => {
-        if (el && resizeObserver.value) resizeObserver.value.observe(el)
-        readDialMetrics()
+    (el, prev) => {
+        if (prev && resizeObserver.value) {
+            resizeObserver.value.unobserve(prev)
+        }
+        if (el && resizeObserver.value) {
+            resizeObserver.value.observe(el)
+        }
+        if (el) readDialMetrics()
     }
 )
 
@@ -165,8 +228,8 @@ const scenarioSegmentPaths = computed(() => {
     const startColor = gradientStartColor.value
     const endColor = gradientEndColor.value
     const autoOnlyBrightness =
-        props.autoBrightness && !props.startStop?.useColor && !props.endStop?.useColor
-    const pulseSegments = props.autoBrightness && (props.startStop?.useColor || props.endStop?.useColor)
+        props.autoBrightness && !localStartStop?.useColor && !localEndStop?.useColor
+    const pulseSegments = props.autoBrightness && (localStartStop?.useColor || localEndStop?.useColor)
     if (autoOnlyBrightness) {
         segments.push({
             key: 'auto-single',
@@ -237,8 +300,8 @@ const currentNeedle = computed(() => {
     return angleToPoint(angle, FACE_RADIUS)
 })
 
-const showStartOffsetHandle = computed(() => props.startStop?.mode !== 'clock')
-const showEndOffsetHandle = computed(() => props.endStop?.mode !== 'clock')
+const showStartOffsetHandle = computed(() => localStartStop?.mode !== 'clock')
+const showEndOffsetHandle = computed(() => localEndStop?.mode !== 'clock')
 
 const sunOffsetHandleRadius = computed(() => {
     if (!dialMetrics.radius) return 0
@@ -321,10 +384,10 @@ const mainArcRadius = computed(() => trackRadius.value)
 
 const offsetRingRadius = computed(() => (SUN_LINE_INNER_RADIUS + SUN_LINE_OUTER_RADIUS) / 2)
 const startOffsetRingArc = computed(() =>
-    buildOffsetArc(startAnchorMinutes.value, startMinutes.value, 'start', props.startStop, offsetRingRadius.value)
+    buildOffsetArc(startAnchorMinutes.value, startMinutes.value, 'start', localStartStop, offsetRingRadius.value)
 )
 const endOffsetRingArc = computed(() =>
-    buildOffsetArc(endAnchorMinutes.value, endMinutes.value, 'end', props.endStop, offsetRingRadius.value)
+    buildOffsetArc(endAnchorMinutes.value, endMinutes.value, 'end', localEndStop, offsetRingRadius.value)
 )
 
 const offsetRingArcs = computed(() => {
@@ -348,18 +411,18 @@ const currentStatePreview = computed(() => {
     const endMin = Number.isFinite(endMinutes.value) ? endMinutes.value : 0
     const totalSpan = minutesDiff(endMin, startMin) || 1
     const ratio = clampRatio(minutesDiff(props.currentMinute, startMin) / totalSpan)
-    const startBrightness = Number(props.startStop?.brightness ?? 0)
-    const endBrightness = Number(props.endStop?.brightness ?? startBrightness)
+    const startBrightness = Number(localStartStop?.brightness ?? 0)
+    const endBrightness = Number(localEndStop?.brightness ?? startBrightness)
     const brightnessValue = startBrightness + (endBrightness - startBrightness) * ratio
     const blendedColor = blendHex(gradientStartColor.value, gradientEndColor.value, ratio)
     const coords = angleToPoint(minuteToAngle(props.currentMinute), trackRadius.value || FACE_RADIUS)
     let temperatureValue = null
-    if (props.startStop?.colorMode === 'temperature' && props.endStop?.colorMode === 'temperature') {
-        const startTemp = Number(props.startStop?.temperature ?? 0)
-        const endTemp = Number(props.endStop?.temperature ?? startTemp)
+    if (localStartStop?.colorMode === 'temperature' && localEndStop?.colorMode === 'temperature') {
+        const startTemp = Number(localStartStop?.temperature ?? 0)
+        const endTemp = Number(localEndStop?.temperature ?? startTemp)
         temperatureValue = Math.round(startTemp + (endTemp - startTemp) * ratio)
     }
-    const colorDot = !temperatureValue && props.startStop?.useColor && props.endStop?.useColor ? blendedColor : ''
+    const colorDot = !temperatureValue && localStartStop?.useColor && localEndStop?.useColor ? blendedColor : ''
     const colorLabel = temperatureValue ? `${temperatureValue}K` : ''
     const brightnessText = props.autoBrightness ? 'Автояркость' : `${Math.round(brightnessValue)}%`
     return {
@@ -387,14 +450,11 @@ const dialCurrentState = computed(() => {
 })
 
 function minuteToAngle(minute) {
-    const normalized = ((Number(minute) % 1440) + 1440) % 1440
-    return (normalized / 1440) * 360 + 90
+    const normalized = normalizeMinutes(minute)
+    return (normalized / MINUTES_PER_DAY) * FULL_CIRCLE_DEG + 90
 }
 
-function minutesToGradientAngle(minutes) {
-    const normalized = ((Number(minutes) % 1440) + 1440) % 1440
-    return (normalized / 1440) * 360 + 90
-}
+const minutesToGradientAngle = minuteToAngle
 
 function angleToPoint(angle, radius = FACE_RADIUS) {
     const rad = (angle * Math.PI) / 180
@@ -406,7 +466,10 @@ function angleToPoint(angle, radius = FACE_RADIUS) {
 
 function buildSegmentPath(segment) {
     const startAngle = minuteToAngle(segment.startMinute || 0)
-    const sweep = Math.min(Math.max(0.5, (Number(segment.spanMinutes) / 1440) * 360), 359.999)
+    const sweep = Math.min(
+        Math.max(0.5, (Number(segment.spanMinutes) / MINUTES_PER_DAY) * FULL_CIRCLE_DEG),
+        FULL_CIRCLE_DEG - 0.001
+    )
     const endAngle = startAngle + sweep
     const startPoint = angleToPoint(startAngle)
     const endPoint = angleToPoint(endAngle)
@@ -441,7 +504,7 @@ function describeOffsetArcPath(anchorMin, targetMin, radius) {
     const endAngle = minuteToAngle(targetMin)
     const start = angleToPoint(startAngle, radius)
     const end = angleToPoint(endAngle, radius)
-    const largeArcFlag = Math.abs(diff) > 720 ? 1 : 0
+    const largeArcFlag = Math.abs(diff) > HALF_DAY_MINUTES ? 1 : 0
     const sweepFlag = diff >= 0 ? 1 : 0
     return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArcFlag} ${sweepFlag} ${end.x} ${end.y}`
 }
@@ -481,15 +544,15 @@ function clampRatio(value) {
 
 function minutesDiff(a, b) {
     let diff = Number(a) - Number(b)
-    while (diff > 720) diff -= 1440
-    while (diff < -720) diff += 1440
+    while (diff > HALF_DAY_MINUTES) diff -= MINUTES_PER_DAY
+    while (diff < -HALF_DAY_MINUTES) diff += MINUTES_PER_DAY
     return diff
 }
 
 function clockwiseDuration(startMin, endMin) {
     let span = endMin - startMin
-    if (span <= 0) span += 1440
-    if (!span || span <= 0) span = 1440
+    if (span <= 0) span += MINUTES_PER_DAY
+    if (!span || span <= 0) span = MINUTES_PER_DAY
     return span
 }
 
@@ -554,6 +617,63 @@ function flagTextColor(accentHex) {
     const { r, g, b } = hexToRgb(accentHex)
     const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
     return luminance > 0.65 ? '#070a12' : '#f8fafc'
+}
+
+function enqueueStopEmit(type, { immediate = false } = {}) {
+    if (type !== 'start' && type !== 'end') return
+    const state = stopEmitState[type]
+    state.dirty = true
+    maybeEmitStop(type, immediate)
+}
+
+function maybeEmitStop(type, immediate = false) {
+    const state = stopEmitState[type]
+    if (!state || !state.dirty) return
+    const timestamp = now()
+    if (!immediate && timestamp - state.lastEmit < HANDLE_EMIT_THROTTLE_MS) return
+    state.lastEmit = timestamp
+    state.dirty = false
+    emitStopPayload(type)
+}
+
+function emitStopPayload(type) {
+    if (type !== 'start' && type !== 'end') return
+    const startSnapshot = snapshotStop(localStartStop)
+    const endSnapshot = snapshotStop(localEndStop)
+    if (type === 'start') emit('update:start-stop', startSnapshot)
+    else emit('update:end-stop', endSnapshot)
+    emit('change', { start: startSnapshot, end: endSnapshot })
+}
+
+function flushStopEmitForHandle(handle) {
+    const type = handleToStopType(handle)
+    if (!type) return
+    maybeEmitStop(type, true)
+}
+
+function handleToStopType(handle) {
+    if (handle === 'start' || handle === 'start-offset') return 'start'
+    if (handle === 'end' || handle === 'end-offset') return 'end'
+    return ''
+}
+
+function syncStopState(target, source) {
+    const next = source ? { ...toRaw(source) } : {}
+    Object.keys(target).forEach((key) => {
+        if (!(key in next)) delete target[key]
+    })
+    Object.assign(target, next)
+}
+
+function snapshotStop(stop) {
+    return { ...toRaw(stop) }
+}
+
+function now() {
+    if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+        return performance.now()
+    }
+    return Date.now()
 }
 
 
@@ -627,14 +747,15 @@ function shouldOpenHandleEditor(type) {
 function handleDialPointerDown(type, event) {
     if (event.button !== undefined && event.button !== 0) return
     event.preventDefault()
+    readDialMetrics()
     draggingHandle.value = type
     const pointerMinutes = pointerToMinutes(event)
     dragState.activePointerMinutes = pointerMinutes
     dragState.accumulatedMinutes = 0
     dragState.handleStartMinutes =
         type === 'start' ? startMinutes.value : type === 'end' ? endMinutes.value : 0
-    if (type === 'start' && props.startStop?.mode !== 'clock') suppressedSnapHandle.value = 'start'
-    else if (type === 'end' && props.endStop?.mode !== 'clock') suppressedSnapHandle.value = 'end'
+    if (type === 'start' && localStartStop?.mode !== 'clock') suppressedSnapHandle.value = 'start'
+    else if (type === 'end' && localEndStop?.mode !== 'clock') suppressedSnapHandle.value = 'end'
     else suppressedSnapHandle.value = ''
     if (type === 'start' || type === 'end') {
         beginHandleTapTracking(type, event)
@@ -663,19 +784,21 @@ function handleDialPointerMove(event) {
     if (draggingHandle.value === 'start') {
         markHandleTapMoved('start', event)
         if (suppressedSnapHandle.value === 'start') {
-            toClockMode(props.startStop, snappedMinutes)
+            toClockMode(localStartStop, snappedMinutes)
             suppressedSnapHandle.value = ''
+            enqueueStopEmit('start')
             return
         }
-        applyMinutes(props.startStop, snappedMinutes)
+        applyMinutes(localStartStop, snappedMinutes, 'start')
     } else if (draggingHandle.value === 'end') {
         markHandleTapMoved('end', event)
         if (suppressedSnapHandle.value === 'end') {
-            toClockMode(props.endStop, snappedMinutes)
+            toClockMode(localEndStop, snappedMinutes)
             suppressedSnapHandle.value = ''
+            enqueueStopEmit('end')
             return
         }
-        applyMinutes(props.endStop, snappedMinutes)
+        applyMinutes(localEndStop, snappedMinutes, 'end')
     }
 }
 
@@ -689,6 +812,7 @@ function handleDialPointerUp(event) {
         releaseHandleTapTracking(activeHandle)
     }
     stopActiveDrag()
+    flushStopEmitForHandle(activeHandle)
     if (tapAllowed) {
         const type = activeHandle === 'start' ? 'open-start-editor' : 'open-end-editor'
         requestAnimationFrame(() => emit(type))
@@ -697,19 +821,23 @@ function handleDialPointerUp(event) {
 
 function handleDialPointerLeave() {
     if (!draggingHandle.value) return
-    if (draggingHandle.value === 'start' || draggingHandle.value === 'end') {
-        releaseHandleTapTracking(draggingHandle.value)
+    const activeHandle = draggingHandle.value
+    if (activeHandle === 'start' || activeHandle === 'end') {
+        releaseHandleTapTracking(activeHandle)
     }
     stopActiveDrag()
+    flushStopEmitForHandle(activeHandle)
 }
 
 function handleDialPointerCancel(event) {
     if (!draggingHandle.value) return
+    const activeHandle = draggingHandle.value
     event?.target?.releasePointerCapture?.(event.pointerId)
-    if (draggingHandle.value === 'start' || draggingHandle.value === 'end') {
-        releaseHandleTapTracking(draggingHandle.value)
+    if (activeHandle === 'start' || activeHandle === 'end') {
+        releaseHandleTapTracking(activeHandle)
     }
     stopActiveDrag()
+    flushStopEmitForHandle(activeHandle)
 }
 
 function stopActiveDrag() {
@@ -721,20 +849,20 @@ function stopActiveDrag() {
 }
 
 function pointerToMinutes(event) {
-    const centerX = dialMetrics.centerX
-    const centerY = dialMetrics.centerY
+    const centerX = dialCenterX
+    const centerY = dialCenterY
     if (!Number.isFinite(centerX) || !Number.isFinite(centerY)) return 0
     const dx = event.clientX - centerX
     const dy = event.clientY - centerY
     let angleDeg = (Math.atan2(dy, dx) * 180) / Math.PI
-    angleDeg = (angleDeg + 360) % 360
-    const minutes = ((angleDeg - 90 + 360) % 360) * (1440 / 360)
+    angleDeg = (angleDeg + FULL_CIRCLE_DEG) % FULL_CIRCLE_DEG
+    const minutes = ((angleDeg - 90 + FULL_CIRCLE_DEG) % FULL_CIRCLE_DEG) * (MINUTES_PER_DAY / FULL_CIRCLE_DEG)
     return Math.round(minutes)
 }
 
 function normalizeMinutes(value) {
-    let next = value % 1440
-    if (next < 0) next += 1440
+    let next = Number(value) % MINUTES_PER_DAY
+    if (next < 0) next += MINUTES_PER_DAY
     return next
 }
 
@@ -747,10 +875,12 @@ function emitOffsetChange(type, pointerMinutes) {
     const anchor = type === 'start' ? startAnchorMinutes.value : endAnchorMinutes.value
     const diff = minutesDiff(pointerMinutes, anchor)
     const clamped = Math.max(-OFFSET_LIMIT, Math.min(OFFSET_LIMIT, diff))
-    if (type === 'start' && props.startStop?.mode !== 'clock') {
-        props.startStop.offset = clamped
-    } else if (type === 'end' && props.endStop?.mode !== 'clock') {
-        props.endStop.offset = clamped
+    if (type === 'start' && localStartStop?.mode !== 'clock') {
+        localStartStop.offset = clamped
+        enqueueStopEmit('start')
+    } else if (type === 'end' && localEndStop?.mode !== 'clock') {
+        localEndStop.offset = clamped
+        enqueueStopEmit('end')
     }
 }
 
@@ -761,7 +891,7 @@ function toClockMode(stop, minutes) {
     stop.offset = 0
 }
 
-function applyMinutes(stop, minutes) {
+function applyMinutes(stop, minutes, type) {
     if (!stop) return
     const snapped = detectAnchor(minutes)
     if (snapped) {
@@ -770,6 +900,7 @@ function applyMinutes(stop, minutes) {
     } else {
         toClockMode(stop, minutes)
     }
+    if (type) enqueueStopEmit(type)
 }
 
 function detectAnchor(minutes) {
@@ -826,7 +957,7 @@ function stopLabel(stop) {
 }
 
 function minutesToTimeString(minute) {
-    const value = ((Number(minute) % 1440) + 1440) % 1440
+    const value = normalizeMinutes(minute)
     const hours = Math.floor(value / 60)
     const mins = value % 60
     return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`

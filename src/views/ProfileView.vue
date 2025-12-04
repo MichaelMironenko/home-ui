@@ -155,15 +155,12 @@ async function runDetection(autoApply = false) {
             }
             return
         }
-        if (detection.status === 'needs_geo') {
-            if (detection.cityHint?.name) {
-                cityQuery.value = detection.cityHint.name
-            }
-            const tzName = detection.timezone?.name || detection.timezone?.timezone || 'указанной таймзоны'
-            if (detection.ip?.city) {
-                detectionMessage.value = `IP сообщает о городе ${detection.ip.city}, но локальное время отличается. Попробуем геолокацию или введите город вручную.`
-            } else {
-                detectionMessage.value = `Не удалось подтвердить город по IP. Попробуем геолокацию или введите город в ${tzName}.`
+    if (detection.status === 'needs_geo') {
+      const tzName = detection.timezone?.name || detection.timezone?.timezone || 'указанной таймзоны'
+      if (detection.ip?.city) {
+        detectionMessage.value = `IP сообщает о городе ${detection.ip.city}, но локальное время отличается. Попробуем геолокацию или введите город вручную.`
+      } else {
+        detectionMessage.value = `Не удалось подтвердить город по IP. Попробуем геолокацию или введите город в ${tzName}.`
             }
             await triggerAutoGeolocation()
             return
@@ -190,24 +187,25 @@ async function saveCityFromInput() {
         statusMessage.value = 'Введите город'
         return
     }
-    let city = null
-    if (selectedCity.value && selectedCity.value.name === name) {
-        city = selectedCity.value
-    } else {
-        try {
-            const { city: resolved } = await profileStore.geocodeCityByName(name, { limit: 1 })
-            city = resolved || null
-        } catch (err) {
-            statusMessage.value = err?.message || 'Не удалось сохранить город'
-            return
-        }
+  let city = null
+  if (selectedCity.value && selectedCity.value.name === name) {
+    city = selectedCity.value
+  }
+  if (!city || !city.timezone || city.lat == null || city.lon == null) {
+    try {
+      const lookup = await profileStore.geocodeCityByName(name, { limit: 1 })
+      city = lookup?.city || lookup?.suggestions?.[0] || city
+    } catch (err) {
+      statusMessage.value = err?.message || 'Не удалось сохранить город'
+      return
     }
-    if (!city) {
-        statusMessage.value = 'Не нашли такой город'
-        return
-    }
-    await saveCity(city)
-    detectionMessage.value = ''
+  }
+  if (!city || !city.timezone) {
+    statusMessage.value = 'Не нашли такой город'
+    return
+  }
+  await saveCity(city)
+  detectionMessage.value = ''
 }
 
 function selectSuggestion(option) {
