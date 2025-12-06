@@ -1,14 +1,18 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watchEffect } from 'vue'
 import { trackFunctionCall } from '../lib/requestMetrics'
 import { getConfig } from '../lib/api'
+import { setDocumentTitle } from '../utils/pageTitle'
+import { temperatureToHex } from '../utils/colorUtils'
 
 const cfg = ref({ base: '', keyHeader: 'x-api-key', keyValue: '' })
 const loading = ref(false)
 const error = ref('')
 const events = ref([])
-const catalogDevices = ref({})
-const catalogGroups = ref({})
+
+watchEffect(() => {
+  setDocumentTitle('Журнал сценариев')
+})
 
 function normalizeBase(url = '') {
   return url.replace(/\/+$/, '')
@@ -76,178 +80,56 @@ const ORIGIN_LABELS = {
   presence: 'Присутствие',
 }
 
-const PRESENCE_LABELS = {
-  home: 'Дома',
-  away: 'Нет дома',
-  unknown: 'Неизвестно',
+const ORIGIN_VARIANTS = {
+  manual: 'manual',
+  'manual-batch': 'manual',
+  timer: 'timer',
+  'timer-single': 'timer',
+  save: 'system',
+  resume: 'system',
+  presence: 'presence',
 }
 
-function formatDevice(device) {
-  const name = device?.name?.trim() || device?.id || 'Устройство'
-  const brightness = Number(device?.brightness)
-  const brightnessText = Number.isFinite(brightness) ? `${Math.round(brightness)}%` : '—'
-  const color = device?.color || null
-  let colorText = '—'
-  let colorHex = null
-  let isTemperature = false
-  if (color) {
-    if (color.type === 'temperature' && Number.isFinite(color.temperatureK)) {
-      colorText = `${Math.round(color.temperatureK)}K`
-      isTemperature = true
-    } else if (color.type === 'color' && typeof color.hex === 'string') {
-      colorHex = color.hex
-      colorText = color.hex.toUpperCase()
-    }
-  }
-  return {
-    id: device?.id || name,
-    name,
-    brightnessText,
-    brightness,
-    colorText,
-    colorHex,
-    isTemperature,
-    color,
-  }
-}
-
-function normalizeEvents(list, maps) {
+function normalizeEvents(list) {
   if (!Array.isArray(list)) return []
-  const deviceMap = maps?.devices || {}
-  const groupMap = maps?.groups || {}
+  const seenIds = new Map()
   const mapped = list.map((raw) => {
     if (!raw || typeof raw !== 'object') return null
     const tsSource = raw.ts || raw.timestamp || raw.timeText || null
     const parsedTs = tsSource ? Date.parse(tsSource) : NaN
     const timestamp = Number.isNaN(parsedTs) ? Date.now() : parsedTs
-    const devicesRaw = Array.isArray(raw.devices) ? raw.devices.map(formatDevice) : []
-    const presenceStatus = raw.presenceStatus || 'unknown'
-    const status = raw.status || {}
-    const isPaused = !!status.pause
-    const statusText = isPaused
-      ? 'Пауза'
-      : (status.throttled ? 'Отложено по rate-limit'
-        : (status.reason && status.reason !== 'manual_pause' ? status.reason : ''))
+    const triggerVariant = ORIGIN_VARIANTS[raw?.origin] || 'generic'
 
-    const targetGroups = Array.isArray(raw?.target?.groups) ? raw.target.groups.map((id) => ({
-      id,
-      name: groupMap[id] || id,
-    })) : []
-    const targetDevices = Array.isArray(raw?.target?.devices) ? raw.target.devices.map((id) => ({
-      id,
-      name: deviceMap[id] || id,
-    })) : []
-
-    const showDeviceDetails = targetGroups.length === 0
-
-    const brightnessValues = devicesRaw
-      .map((d) => Number.isFinite(d.brightness) ? Math.round(d.brightness) : null)
-      .filter((v) => v != null)
-    let brightnessDisplay = ''
-    if (brightnessValues.length === 1) {
-      brightnessDisplay = `${brightnessValues[0]}%`
-    } else if (brightnessValues.length > 1) {
-      const min = Math.min(...brightnessValues)
-      const max = Math.max(...brightnessValues)
-      brightnessDisplay = min === max ? `${min}%` : `${min}–${max}%`
-    }
-
-    const tempValues = devicesRaw
-      .map((d) => {
-        if (d.color?.type === 'temperature' && Number.isFinite(d.color.temperatureK)) {
-          return Math.round(d.color.temperatureK)
-        }
-        return null
-      })
-      .filter((v) => v != null)
-    let colorHexDisplay = null
-    let colorLabel = ''
-    if (tempValues.length) {
-      const min = Math.min(...tempValues)
-      const max = Math.max(...tempValues)
-      colorLabel = min === max ? `${min}K` : `${min}–${max}K`
-    } else {
-      const hexValues = devicesRaw
-        .map((d) => (d.color?.type === 'color' && typeof d.color.hex === 'string') ? d.color.hex : null)
-        .filter((v) => typeof v === 'string')
-      if (hexValues.length) {
-        const uniqueHex = Array.from(new Set(hexValues.map((hex) => hex.toLowerCase())))
-        if (uniqueHex.length === 1) {
-          colorHexDisplay = uniqueHex[0]
-          colorLabel = uniqueHex[0].toUpperCase()
-        } else {
-          colorLabel = 'несколько цветов'
-        }
-      }
-    }
-
-    let nextRunText = ''
-    if (status.nextRunUtc) {
-      try {
-        const dt = new Date(status.nextRunUtc)
-        nextRunText = dt.toLocaleString('ru-RU', {
-          hour: '2-digit',
-          minute: '2-digit',
-          day: '2-digit',
-          month: '2-digit'
-        })
-      } catch (_) {
-        nextRunText = status.nextRunUtc
-      }
-    }
-    let nextRequestText = ''
-    if (status.nextRequestUtc) {
-      try {
-        const dt = new Date(status.nextRequestUtc)
-        nextRequestText = dt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      } catch (_) {
-        nextRequestText = status.nextRequestUtc
-      }
-    }
+    const baseId = raw?.id || `evt_${timestamp}`
+    const dupCount = seenIds.get(baseId) || 0
+    const dedupedId = dupCount === 0 ? baseId : `${baseId}_${dupCount + 1}`
+    seenIds.set(baseId, dupCount + 1)
 
     return {
-      id: raw?.id || `evt_${timestamp}`,
+      id: dedupedId,
       timestamp,
       timeText: formatTime(timestamp),
       scenarioName: raw?.scenarioName || raw?.scenarioId || 'Без имени',
+      triggerVariant,
       triggerLabel: formatTriggerLabel(raw?.origin),
-      targetGroups,
-      targetDevices,
-      devices: devicesRaw,
-      showDeviceDetails,
-      presenceLabel: PRESENCE_LABELS[presenceStatus] || PRESENCE_LABELS.unknown,
-      statusText,
-      isPaused,
-      brightnessDisplay,
-      colorLabel,
-      colorHexDisplay,
-      requestSummary: Array.isArray(raw?.requestSummary) ? raw.requestSummary : [],
-      nextRunText,
-      nextRequestText,
-      functionBreakdown: Array.isArray(raw?.functionBreakdown) ? raw.functionBreakdown : [],
+      brightnessDisplay: typeof raw?.brightness === 'string' ? raw.brightness : '',
+      colorLabel: raw?.colorLabel || '',
+      colorTemperature: Number.isFinite(raw?.colorTemperature) ? Number(raw.colorTemperature) : null,
+      colorHexDisplay: typeof raw?.colorHex === 'string' ? raw.colorHex : null,
       sensorLux: Number.isFinite(raw?.sensorLux) ? Math.round(raw.sensorLux) : null,
     }
   })
   return mapped.filter(Boolean).sort((a, b) => b.timestamp - a.timestamp)
 }
 
-async function loadCatalog() {
-  if (!cfg.value.base) return
-  try {
-    const data = await apiFetch('/catalog')
-    const dMap = {}
-    const gMap = {}
-    for (const d of Array.isArray(data?.devices) ? data.devices : []) {
-      if (d?.id) dMap[d.id] = d.name || d.id
-    }
-    for (const g of Array.isArray(data?.groups) ? data.groups : []) {
-      if (g?.id) gMap[g.id] = g.name || g.id
-    }
-    catalogDevices.value = dMap
-    catalogGroups.value = gMap
-  } catch (err) {
-    console.warn('catalog load failed', err)
+function colorSwatchStyle(event) {
+  if (event.colorHexDisplay) {
+    return { backgroundColor: event.colorHexDisplay }
   }
+  if (Number.isFinite(event.colorTemperature)) {
+    return { backgroundColor: temperatureToHex(event.colorTemperature) }
+  }
+  return null
 }
 
 async function loadEvents() {
@@ -256,10 +138,7 @@ async function loadEvents() {
   error.value = ''
   try {
     const data = await apiFetch('/events')
-    events.value = normalizeEvents(data?.events || [], {
-      devices: catalogDevices.value,
-      groups: catalogGroups.value,
-    })
+    events.value = normalizeEvents(data?.events || [])
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     error.value = `Ошибка загрузки истории: ${message}`
@@ -273,7 +152,6 @@ const hasEvents = computed(() => events.value.length > 0)
 onMounted(async () => {
   await loadConfig()
   if (cfg.value.base) {
-    await loadCatalog()
     await loadEvents()
   }
 })
@@ -306,57 +184,37 @@ async function refreshAll() {
     <section class="timeline" v-else>
       <p v-if="!hasEvents" class="empty">Нет событий за выбранный период.</p>
       <article v-for="event in events" :key="event.id" class="event-card">
-        <header class="event-head">
-          <span class="event-time">{{ event.timeText }}</span>
-          <span class="event-trigger" v-if="event.triggerLabel">{{ event.triggerLabel }}</span>
-        </header>
-        <div class="event-name">{{ event.scenarioName }}</div>
-        <div class="event-target" v-if="event.targetGroups.length">
-          <span class="target-chip" v-for="group in event.targetGroups" :key="group.id">{{ group.name }}</span>
-        </div>
-        <div class="event-target" v-else-if="event.targetDevices.length && !event.showDeviceDetails">
-          <span class="target-chip" v-for="device in event.targetDevices" :key="device.id">{{ device.name }}</span>
-        </div>
-        <div class="event-metrics" v-if="event.brightnessDisplay || event.colorLabel || event.sensorLux != null">
-          <span v-if="event.brightnessDisplay" class="metric">
-            <span class="metric-label">Яркость</span>
-            <span class="metric-value">{{ event.brightnessDisplay }}</span>
-          </span>
-          <span v-if="event.colorLabel" class="metric">
-            <span class="metric-label">Цвет</span>
-            <span class="metric-value">
-              <span v-if="event.colorHexDisplay" class="metric-dot" :style="{ backgroundColor: event.colorHexDisplay }" />
-              {{ event.colorLabel }}
+        <div class="event-row">
+          <div class="event-time-block">
+            <span class="event-time">{{ event.timeText }}</span>
+            <span v-if="event.triggerLabel" class="event-trigger" :class="`trigger-${event.triggerVariant}`">{{ event.triggerLabel }}</span>
+          </div>
+          <div class="event-main">
+            <div class="event-name">{{ event.scenarioName }}</div>
+            <div class="event-metrics" v-if="event.brightnessDisplay || event.colorLabel || event.sensorLux != null">
+            <span v-if="event.brightnessDisplay" class="metric">
+              <span class="metric-icon" aria-hidden="true">💡</span>
+              <span class="metric-value">{{ event.brightnessDisplay }}</span>
+              </span>
+            <span v-if="event.colorLabel" class="metric metric-color">
+              <span
+                class="color-swatch"
+                :class="{ temperature: !event.colorHexDisplay }"
+                :style="colorSwatchStyle(event)"
+              ></span>
+              <span class="metric-value">{{ event.colorLabel }}</span>
             </span>
-          </span>
-          <span v-if="event.sensorLux != null" class="metric">
-            <span class="metric-label">Датчик</span>
-            <span class="metric-value">{{ event.sensorLux }} lx</span>
-          </span>
-        </div>
-        <div class="event-devices" v-if="event.showDeviceDetails && event.devices.length">
-          <div class="device-chip" v-for="device in event.devices" :key="device.id">
-            <span class="device-name">{{ device.name }}</span>
-            <span class="device-brightness">{{ device.brightnessText }}</span>
-            <span v-if="device.colorHex" class="color-dot" :style="{ backgroundColor: device.colorHex }" />
-            <span v-if="device.colorHex" class="device-color">{{ device.colorText }}</span>
-            <span v-else-if="device.isTemperature" class="device-color">{{ device.colorText }}</span>
+              <span v-if="event.sensorLux != null" class="metric">
+                <span class="metric-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" role="presentation">
+                    <path d="M12 4.5a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0v-1a1 1 0 0 1 1-1Zm6.364 3.136a1 1 0 0 1 0 1.414l-.707.707a1 1 0 0 1-1.414-1.414l.707-.707a1 1 0 0 1 1.414 0ZM18.5 13a1 1 0 0 1 0 2h-1a1 1 0 1 1 0-2h1Zm-12 0a1 1 0 1 1 0 2H5.5a1 1 0 0 1 0-2h1Zm1.257-5.243a1 1 0 0 1 0 1.414l-.707.707a1 1 0 0 1-1.414-1.414l.707-.707a1 1 0 0 1 1.414 0ZM12 9a4 4 0 1 1 0 8 4 4 0 0 1 0-8Zm0 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm-1 6.5h2V20a1 1 0 1 1-2 0v-2.5Z" />
+                  </svg>
+                </span>
+                <span class="metric-value">{{ event.sensorLux }} lx</span>
+              </span>
+            </div>
           </div>
         </div>
-        <div class="event-requests" v-if="event.requestSummary && event.requestSummary.length">
-          <div class="requests-title">API вызовы</div>
-          <ul class="requests-list">
-            <li v-for="req in event.requestSummary" :key="req.kind" class="requests-row">
-              <span class="requests-kind">{{ req.kind }}</span>
-              <span class="requests-count">{{ req.count }}</span>
-            </li>
-          </ul>
-        </div>
-        <footer class="event-foot">
-          <span class="presence">Присутствие: {{ event.presenceLabel }}</span>
-          <span v-if="event.statusText" class="status" :class="{ pause: event.isPaused }">{{ event.statusText }}</span>
-          <span v-if="event.errorText" class="error">{{ event.errorText }}</span>
-        </footer>
       </article>
     </section>
   </main>
@@ -530,7 +388,7 @@ async function refreshAll() {
 .timeline {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .empty {
@@ -539,21 +397,32 @@ async function refreshAll() {
 }
 
 .event-card {
-  padding: 16px 18px;
+  padding: 10px 18px;
   border-radius: 14px;
   background: rgba(15, 23, 42, 0.65);
   border: 1px solid rgba(148, 163, 184, 0.2);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
-.event-head {
+.event-row {
+  width: 100%;
   display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: #94a3b8;
+  align-items: flex-start;
+  gap: 18px;
+}
+
+.event-row:hover .event-name {
+  color: #ffffff;
+}
+
+.event-time-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  flex: 0 0 80px;
 }
 
 .event-time {
@@ -563,39 +432,69 @@ async function refreshAll() {
 }
 
 .event-trigger {
-  color: #94a3b8;
   font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  color: #93c5fd;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.13);
 }
 
-.event-trigger::before {
-  content: '·';
-  color: #475569;
-  font-weight: 600;
+.event-trigger.trigger-timer {
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, 0.15);
+}
+
+.event-trigger.trigger-presence {
+  color: #d8b4fe;
+  background: rgba(192, 132, 252, 0.15);
+}
+
+.event-trigger.trigger-system {
+  color: #fecaca;
+  background: rgba(248, 113, 113, 0.15);
 }
 
 .event-name {
   font-weight: 600;
   color: #f8fafc;
   font-size: 18px;
+  margin: 0;
 }
 
-.event-target {
+.event-main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.event-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
-.target-chip {
-  padding: 4px 10px;
+.status-pill {
+  padding: 2px 8px;
   border-radius: 999px;
-  background: rgba(148, 163, 184, 0.12);
-  color: #e2e8f0;
-  font-size: 13px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  background: rgba(248, 250, 252, 0.08);
+  color: #f1f5f9;
+}
+
+.status-pill.pause {
+  color: #fbbf24;
+}
+
+.status-pill.error {
+  color: #fca5a5;
 }
 
 .event-metrics {
@@ -604,138 +503,51 @@ async function refreshAll() {
   gap: 12px;
   font-size: 13px;
   color: #cbd5f5;
+  justify-content: flex-start;
+  min-width: 0;
+  align-items: center;
 }
 
 .metric {
   display: flex;
   align-items: center;
   gap: 6px;
-}
-
-.metric-label {
-  color: #94a3b8;
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  color: #f8fafc;
+  font-weight: 500;
 }
 
 .metric-value {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: #f8fafc;
-  font-weight: 500;
-}
-
-.metric-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-}
-
-.event-devices {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.event-requests {
-  border-top: 1px solid rgba(148, 163, 184, 0.15);
-  padding-top: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.requests-title {
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: #94a3b8;
-}
-
-.requests-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.requests-row {
-  display: flex;
-  justify-content: space-between;
-  font-family: 'SFMono-Regular', monospace;
-  font-size: 12px;
-  background: rgba(30, 41, 59, 0.6);
-  border-radius: 6px;
-  padding: 4px 8px;
-  color: #cbd5f5;
-}
-
-.requests-kind {
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.requests-count {
   font-weight: 600;
-  color: #38bdf8;
 }
 
-.device-chip {
-  display: flex;
+.metric-color .metric-value {
+  font-weight: 500;
+}
+
+.metric-icon {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(148, 163, 184, 0.12);
-  color: #e2e8f0;
-  font-size: 13px;
+  justify-content: center;
+  color: #fcd34d;
 }
 
-.device-name {
-  font-weight: 500;
+.metric-icon svg {
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
 }
 
-.device-brightness {
-  color: #cbd5f5;
-}
-
-.device-color {
-  color: #f8fafc;
-  font-weight: 500;
-}
-
-.color-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-}
-
-.event-foot {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  font-size: 13px;
-  color: #cbd5f5;
-}
-
-.status.pause {
+.metric:last-child .metric-icon {
   color: #fbbf24;
 }
 
-.presence {
-  font-weight: 500;
-}
-
-.status {
-  color: #f1f5f9;
+.color-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.4);
 }
 
 .error {
@@ -752,6 +564,16 @@ async function refreshAll() {
   }
   .event-card {
     padding: 14px;
+  }
+  .event-row {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .event-time-block {
+    flex: 0 0 auto;
+  }
+  .event-metrics {
+    justify-content: flex-start;
   }
 }
 </style>

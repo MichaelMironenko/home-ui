@@ -1,3 +1,9 @@
+<script setup>
+import { setDocumentTitle } from '../utils/pageTitle'
+
+setDocumentTitle('Страница не найдена')
+</script>
+
 <template>
   <main class="not-found">
     <h1>Страница не найдена</h1>

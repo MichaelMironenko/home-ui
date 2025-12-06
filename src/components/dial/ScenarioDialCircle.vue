@@ -63,6 +63,7 @@ const MINUTES_PER_DAY = 1440
 const HALF_DAY_MINUTES = MINUTES_PER_DAY / 2
 const FULL_CIRCLE_DEG = 360
 const HANDLE_EMIT_THROTTLE_MS = 80
+const AUTO_BRIGHTNESS_WARM_HEX = '#fff4dd'
 
 const dialElement = ref(null)
 const dialMetrics = reactive({
@@ -235,7 +236,7 @@ const scenarioSegmentPaths = computed(() => {
             key: 'auto-single',
             startMinute: start,
             spanMinutes: span,
-            color: startColor,
+            color: AUTO_BRIGHTNESS_WARM_HEX,
             pulse: true,
             single: true
         })
@@ -297,7 +298,10 @@ const dialStyleVars = computed(() => {
 const currentNeedle = computed(() => {
     if (!Number.isFinite(props.currentMinute)) return null
     const angle = minuteToAngle(props.currentMinute)
-    return angleToPoint(angle, FACE_RADIUS)
+    return {
+        start: angleToPoint(angle, SUN_LINE_INNER_RADIUS),
+        end: angleToPoint(angle, SUN_LINE_OUTER_RADIUS)
+    }
 })
 
 const showStartOffsetHandle = computed(() => localStartStop?.mode !== 'clock')
@@ -403,51 +407,6 @@ const startFlagStyle = computed(() =>
 const endFlagStyle = computed(() =>
     buildRadialFlagStyle(endMinutes.value, 'end', gradientEndColor.value)
 )
-
-const currentStatePreview = computed(() => {
-    if (props.scenarioStatus !== 'running') return null
-    if (!Number.isFinite(props.currentMinute)) return null
-    const startMin = Number.isFinite(startMinutes.value) ? startMinutes.value : 0
-    const endMin = Number.isFinite(endMinutes.value) ? endMinutes.value : 0
-    const totalSpan = minutesDiff(endMin, startMin) || 1
-    const ratio = clampRatio(minutesDiff(props.currentMinute, startMin) / totalSpan)
-    const startBrightness = Number(localStartStop?.brightness ?? 0)
-    const endBrightness = Number(localEndStop?.brightness ?? startBrightness)
-    const brightnessValue = startBrightness + (endBrightness - startBrightness) * ratio
-    const blendedColor = blendHex(gradientStartColor.value, gradientEndColor.value, ratio)
-    const coords = angleToPoint(minuteToAngle(props.currentMinute), trackRadius.value || FACE_RADIUS)
-    let temperatureValue = null
-    if (localStartStop?.colorMode === 'temperature' && localEndStop?.colorMode === 'temperature') {
-        const startTemp = Number(localStartStop?.temperature ?? 0)
-        const endTemp = Number(localEndStop?.temperature ?? startTemp)
-        temperatureValue = Math.round(startTemp + (endTemp - startTemp) * ratio)
-    }
-    const colorDot = !temperatureValue && localStartStop?.useColor && localEndStop?.useColor ? blendedColor : ''
-    const colorLabel = temperatureValue ? `${temperatureValue}K` : ''
-    const brightnessText = props.autoBrightness ? 'Автояркость' : `${Math.round(brightnessValue)}%`
-    return {
-        cx: coords.x,
-        cy: coords.y,
-        color: blendedColor,
-        brightnessText,
-        colorLabel,
-        colorDot
-    }
-})
-
-const currentStateCache = ref(null)
-watch(
-    currentStatePreview,
-    (value) => {
-        if (!draggingPrimaryHandle.value) currentStateCache.value = value
-    },
-    { immediate: true }
-)
-
-const dialCurrentState = computed(() => {
-    if (draggingPrimaryHandle.value && currentStateCache.value) return currentStateCache.value
-    return currentStatePreview.value
-})
 
 function minuteToAngle(minute) {
     const normalized = normalizeMinutes(minute)
@@ -582,11 +541,11 @@ function buildHandleStyle(coords, { size = 40, color, borderWidth } = {}) {
 function buildRadialFlagStyle(minutes, type, accentColor) {
     const dialRadius = dialMetrics.radius
     if (!dialRadius || !Number.isFinite(minutes)) return {}
-    const faceRadius = dialRadius * (props.dialFaceRatio || 0.62)
+    const faceRadius = dialRadius * (props.dialFaceRatio || 0.63)
     const arcRadius = mainArcRadius.value || faceRadius
     const arcWidth = Math.max(scenarioArcWidth.value, 28 * dialScale.value)
     const width = Math.max(arcWidth * 1.05, 48 * dialScale.value)
-    const height = Math.max(width * 0.45, 20 * dialScale.value)
+    const height = Math.max(width * 0.15, 15 * dialScale.value)
     const angleDeg = minuteToAngle(minutes)
     const orbitOffsetDeg = Math.min(4, 10 + 4 * dialScale.value)
     const orbitAngleDeg = angleDeg + (type === 'start' ? -orbitOffsetDeg : orbitOffsetDeg)
@@ -601,6 +560,7 @@ function buildRadialFlagStyle(minutes, type, accentColor) {
     const centerY = dialRadius + sin * radialCenter + Math.cos(angleRad) * tangentOffset
     const invert = (angleDeg % 360 + 90) % 360
     const flipped = invert > 180
+    const fontSize = Math.max(11, Math.min(16, 11 * dialScale.value))
     return {
         left: `${centerX}px`,
         top: `${centerY}px`,
@@ -609,7 +569,8 @@ function buildRadialFlagStyle(minutes, type, accentColor) {
         transform: `translate(-50%, -50%) rotate(${flipped ? angleDeg + 180 : angleDeg}deg)`,
         '--flag-accent': accentColor,
         '--flag-contrast': flagTextColor(accentColor),
-        '--flag-rotation': flipped ? '-1' : '1'
+        '--flag-rotation': flipped ? '-1' : '1',
+        fontSize: `${fontSize}px`
     }
 }
 
@@ -984,18 +945,6 @@ function minutesToTimeString(minute) {
                 ⏯
             </button>
 
-            <div v-if="currentStatusLabel || dialCurrentState" class="current-state-hud">
-                <span v-if="currentStatusLabel" class="current-state-line status">{{ currentStatusLabel }}</span>
-                <span v-if="dialCurrentState?.brightnessText" class="current-state-line brightness">
-                    {{ dialCurrentState.brightnessText }}
-                </span>
-                <span v-if="dialCurrentState?.colorLabel" class="current-state-line temperature">
-                    {{ dialCurrentState.colorLabel }}
-                </span>
-                <span v-else-if="dialCurrentState?.colorDot" class="current-state-dot"
-                    :style="{ background: dialCurrentState.colorDot }" />
-            </div>
-
             <div class="day-night-ring" :style="{ '--day-ring-gradient': dayNightGradient }">
                 <svg class="offset-ring-overlay" viewBox="0 0 200 200">
                     <g>
@@ -1016,6 +965,8 @@ function minutesToTimeString(minute) {
                                 :y1="marker.lineStart.y" :x2="marker.lineEnd.x" :y2="marker.lineEnd.y" />
                         </g>
                     </g>
+                    <line v-if="currentNeedle" class="current-needle" :x1="currentNeedle.start.x"
+                        :y1="currentNeedle.start.y" :x2="currentNeedle.end.x" :y2="currentNeedle.end.y" />
                 </svg>
                 <div class="hour-number-layer">
                     <span v-for="item in hourNumberItems" :key="item.hour" class="hour-number"
@@ -1033,8 +984,6 @@ function minutesToTimeString(minute) {
                             :style="{ fill: segment.color }"
                             :class="{ pulse: segment.pulse, single: segment.single }" />
                     </g>
-                    <line v-if="currentNeedle" class="current-needle" x1="100" y1="100" :x2="currentNeedle.x"
-                        :y2="currentNeedle.y" />
                 </svg>
             </div>
 
@@ -1247,55 +1196,6 @@ function minutesToTimeString(minute) {
     overflow: hidden;
 }
 
-.current-state-hud {
-    position: absolute;
-    top: 38%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    text-align: center;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    align-items: center;
-    color: #f8fafc;
-    font-weight: 600;
-    font-size: 14px;
-    pointer-events: none;
-    z-index: 5;
-}
-
-.current-state-line {
-    display: block;
-    line-height: 1.2;
-}
-
-.current-state-line.status {
-    font-size: 11px;
-    color: #c5c8ff;
-    text-transform: uppercase;
-    letter-spacing: 0.18em;
-    font-weight: 600;
-}
-
-.current-state-line.brightness {
-    font-size: 16px;
-    font-weight: 600;
-}
-
-.current-state-line.temperature {
-    font-size: 14px;
-    color: #c5c8ff;
-}
-
-.current-state-dot {
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    border: 2px solid rgba(255, 255, 255, 0.8);
-    margin-top: 2px;
-    box-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
-}
-
 .dial-face-svg {
     width: 100%;
     height: 100%;
@@ -1316,22 +1216,24 @@ function minutesToTimeString(minute) {
 
 @keyframes dial-segment-pulse {
     0% {
-        opacity: 0.3;
+        opacity: 0.6;
     }
 
     50% {
-        opacity: 0.85;
+        opacity: 1;
     }
 
     100% {
-        opacity: 0.3;
+        opacity: 0.6;
     }
 }
 
 .current-needle {
-    stroke: rgba(248, 250, 252, 0.8);
-    stroke-width: 2px;
+    stroke: #f87171;
+    stroke-width: 3px;
     stroke-linecap: round;
+    filter: drop-shadow(0 0 4px rgba(248, 113, 113, 0.45));
+    pointer-events: none;
 }
 
 .dial-offset-handle {
@@ -1365,18 +1267,15 @@ function minutesToTimeString(minute) {
     width: 58px;
     height: 28px;
     border: none;
-    border-radius: 999px;
+    border-radius: 4px;
     background: var(--flag-accent, #f97316);
     color: var(--flag-contrast, #05070f);
     font-weight: 600;
-    font-size: 11px;
     letter-spacing: 0.08em;
-    padding: 0 12px;
     text-transform: uppercase;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.35);
     transform-origin: center;
     touch-action: none;
     z-index: 7;

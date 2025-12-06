@@ -1,7 +1,8 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AutoLightEditor from '../components/AutoLightEditor.vue'
+import { setDocumentTitle } from '../utils/pageTitle'
 
 const route = useRoute()
 const router = useRouter()
@@ -13,6 +14,10 @@ const scenarioId = computed(() => {
 })
 
 const isCreateMode = computed(() => route.name === 'auto-light-create')
+
+watchEffect(() => {
+  setDocumentTitle(isCreateMode.value ? 'Новый автосценарий света' : 'Автоматический свет')
+})
 
 function handleSaved(id) {
   if (!id) return

@@ -23,26 +23,16 @@ import {
     stopColorHex,
     temperatureToHex
 } from '../utils/colorUtils'
+import { summarizeStatusRecord, deriveScenarioListStatus } from '../utils/scenarioStatusDisplay'
+import { setDocumentTitle, SCENARIOS_TITLE } from '../utils/pageTitle'
 
-const scenarioStatusOptions = [
-    { id: 'running', label: 'Работает' },
-    { id: 'paused', label: 'Пауза' },
-    { id: 'off', label: 'Выкл.' }
-]
 const scenarioStatus = ref('running')
 const scenarioDisplayStatus = computed(() => {
     if (scenarioStatus.value === 'off' || scenario.disabled) return 'off'
     return scenarioStatus.value
 })
-const scenarioStatusText = computed(
-    () => scenarioStatusOptions.find((option) => option.id === scenarioDisplayStatus.value)?.label || ''
-)
-const scenarioStatusLabel = computed(() => (scenarioDisplayStatus.value === 'running' ? '' : scenarioStatusText.value))
-const scenarioStatusColor = computed(() => {
-    if (scenarioDisplayStatus.value === 'off') return '#94a3b8'
-    if (scenarioDisplayStatus.value === 'paused') return '#facc15'
-    return '#34d399'
-})
+const scenarioStatusSummary = ref(null)
+const scenarioPauseInfo = ref(null)
 const route = useRoute()
 const router = useRouter()
 const routeScenarioId = computed(() => {
@@ -94,6 +84,21 @@ const scenarioNameValue = computed({
 })
 
 const scenarioNameDisplay = computed(() => scenarioNameValue.value || 'Название сценария')
+
+function updateScenarioPageTitle() {
+    const trimmedName = scenarioNameValue.value?.trim()
+    if (trimmedName) {
+        setDocumentTitle(trimmedName, SCENARIOS_TITLE)
+        return
+    }
+    if (isCreateMode.value) {
+        setDocumentTitle('Новый сценарий', SCENARIOS_TITLE)
+        return
+    }
+    setDocumentTitle('Сценарий', SCENARIOS_TITLE)
+}
+
+watch([scenarioNameValue, isCreateMode], updateScenarioPageTitle, { immediate: true })
 
 watch(editingName, (active) => {
     if (active) {
@@ -474,6 +479,38 @@ const currentWorldMinute = computed(() => {
     return date.getHours() * 60 + date.getMinutes()
 })
 
+const scenarioRuntimeStatus = computed(() => {
+    const derived = deriveScenarioListStatus(
+        {
+            pause: scenarioPauseInfo.value,
+            disabled: scenario.disabled,
+            status: scenarioStatusSummary.value
+        },
+        timeTicker.value
+    )
+    if (derived) return derived
+    if (scenario.disabled) return { kind: 'off', label: 'Выключен' }
+    return { kind: 'waiting', label: 'Нет данных' }
+})
+
+const scenarioStatusText = computed(() => scenarioRuntimeStatus.value?.label || '')
+const scenarioStatusLabel = computed(() =>
+    scenarioRuntimeStatus.value?.kind === 'running' ? '' : scenarioRuntimeStatus.value?.label || ''
+)
+const scenarioStatusColor = computed(() => {
+    const kind = scenarioRuntimeStatus.value?.kind
+    if (kind === 'off') return '#94a3b8'
+    if (kind === 'paused') return '#facc15'
+    if (kind === 'waiting') return '#93c5fd'
+    return '#34d399'
+})
+const scenarioDialStatus = computed(() => {
+    const kind = scenarioRuntimeStatus.value?.kind
+    if (kind === 'off') return 'off'
+    if (kind === 'paused') return 'paused'
+    return 'running'
+})
+
 const dialFaceRatio = 0.74
 const autoBrightnessActive = computed(
     () => autoBrightness.enabled && (startStop.useBrightness || endStop.useBrightness)
@@ -718,6 +755,8 @@ function resetScenarioState() {
     resetAutoBrightness()
     presenceMode.value = 'any'
     scenarioStatus.value = 'running'
+    scenarioStatusSummary.value = null
+    scenarioPauseInfo.value = null
     editingName.value = false
     applyStopsFromScenario()
     syncSelectedDevicesFromSources(true)
@@ -741,6 +780,8 @@ async function loadScenarioById(id) {
         normalizeScenarioStruct(scenario)
         scenario.id = data.id || ''
         scenario.name = data.name || ''
+        scenarioPauseInfo.value = response?.pause || null
+        scenarioStatusSummary.value = summarizeStatusRecord(response?.statusSummary || response?.status || null)
         presenceMode.value = scenario.runtime?.presence === 'onlyWhenHome' ? 'home' : 'any'
         scenarioStatus.value = scenario.disabled ? 'off' : 'running'
         captureSelectionSourcesFromScenario()
@@ -1180,7 +1221,7 @@ async function handleDelete() {
             <div class="dial-column">
                 <ScenarioDialCircle :start-stop="startStop" :end-stop="endStop"
                     :auto-brightness="autoBrightnessActive" :current-status-label="scenarioStatusLabel"
-                    :scenario-status="scenarioDisplayStatus" :sunrise-minute="sunriseTime"
+                    :scenario-status="scenarioDialStatus" :sunrise-minute="sunriseTime"
                     :sunset-minute="sunsetTime" :dial-face-ratio="dialFaceRatio"
                     :current-minute="currentWorldMinute" @open-start-editor="openModal('state', 'start')"
                     @open-end-editor="openModal('state', 'end')" @resume="scenarioStatus = 'running'" />

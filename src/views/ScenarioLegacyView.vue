@@ -1,7 +1,8 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ScenarioEditor from '../components/ScenarioEditor.vue'
+import { setDocumentTitle, SCENARIOS_TITLE } from '../utils/pageTitle'
 
 const route = useRoute()
 const router = useRouter()
@@ -13,6 +14,10 @@ const scenarioId = computed(() => {
 })
 
 const isCreateMode = computed(() => route.name === 'scenario-create-legacy')
+
+watchEffect(() => {
+  setDocumentTitle(isCreateMode.value ? 'Новый классический сценарий' : 'Классический сценарий', SCENARIOS_TITLE)
+})
 
 function handleSaved(id) {
   if (!id) return

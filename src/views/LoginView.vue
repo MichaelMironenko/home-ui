@@ -1,10 +1,15 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, watchEffect } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
+import { setDocumentTitle } from '../utils/pageTitle'
 
 const route = useRoute()
 const auth = useAuth()
+
+watchEffect(() => {
+  setDocumentTitle('Вход')
+})
 
 const redirectUrl = computed(() => {
   const raw = route.query.redirect

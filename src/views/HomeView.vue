@@ -2,9 +2,12 @@
 import { ref, onMounted } from 'vue'
 import DeviceGrid from '../components/DeviceGrid.vue'
 import { getConfig } from '../lib/api'
+import { setDocumentTitle } from '../utils/pageTitle'
 
 const apiBase = ref(null)
 const loading = ref(true)
+
+setDocumentTitle('Главная')
 
 onMounted(async () => {
   try {
