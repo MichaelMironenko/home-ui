@@ -1,4 +1,8 @@
 <script setup>
+import { computed } from 'vue'
+
+import SegmentedControl from './SegmentedControl.vue'
+
 const props = defineProps({
   options: {
     type: Array,
@@ -12,6 +16,13 @@ const props = defineProps({
 
 const emit = defineEmits(['update:value', 'save', 'delete'])
 
+const segmentedOptions = computed(() =>
+  (props.options || []).map((option) => ({
+    value: option.id,
+    label: option.label
+  }))
+)
+
 function select(value) {
   if (props.value === value) return
   emit('update:value', value)
@@ -20,19 +31,9 @@ function select(value) {
 
 <template>
   <section class="presence-section">
-    <div class="presence-toggle">
-      <button
-        v-for="option in options"
-        :key="option.id"
-        type="button"
-        class="presence-btn"
-        :class="{ active: value === option.id }"
-        @click="select(option.id)"
-      >
-        {{ option.label }}
-      </button>
-    </div>
-    <div class="action-row">
+    <SegmentedControl aria-label="Режим запуска" :model-value="value" @update:model-value="select"
+      :options="segmentedOptions" />
+    <div class="action-row" role="group" aria-label="Действия сценария">
       <button type="button" class="ghost" @click="emit('delete')">Удалить</button>
       <button type="button" class="primary" @click="emit('save')">Сохранить</button>
     </div>
@@ -45,29 +46,6 @@ function select(value) {
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-
-.presence-toggle {
-  background: #0b1220;
-  border-radius: 999px;
-  padding: 4px;
-  display: flex;
-  gap: 6px;
-}
-
-.presence-btn {
-  flex: 1;
-  border: none;
-  background: transparent;
-  color: #94a3b8;
-  padding: 8px;
-  border-radius: 999px;
-  font-weight: 600;
-}
-
-.presence-btn.active {
-  background: #6366f1;
-  color: white;
 }
 
 .action-row {
@@ -94,5 +72,26 @@ function select(value) {
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.2);
   color: #f87171;
+}
+
+@media (max-width: 900px) {
+  .presence-section {
+    padding-bottom: 96px;
+  }
+
+  .action-row {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+    width: min(520px, calc(100% - 24px));
+    padding: 12px;
+    border-radius: 18px;
+    background: rgba(12, 19, 36, 0.82);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(18px) saturate(180%);
+    z-index: 12;
+  }
 }
 </style>

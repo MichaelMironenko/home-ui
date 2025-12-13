@@ -205,7 +205,7 @@ function applyAutoBrightnessState(state) {
     autoBrightness.luxMin = Math.min(rawLuxMin, luxMax - 1)
     const rawBrightnessMin = clampNumberLocal(
         state.brightnessMin ?? AUTO_BRIGHTNESS_DEFAULTS.brightnessMin,
-        1,
+        0,
         AUTO_BRIGHTNESS_DEFAULTS.brightnessMax
     )
     const brightnessMax = clampNumberLocal(
@@ -266,6 +266,19 @@ function applyStop(runStop, stored) {
     runStop.useBrightness = stored.useBrightness ?? runStop.useBrightness
 }
 
+function handleStartStopUpdate(snapshot) {
+    applyStop(startStop, snapshot)
+}
+
+function handleEndStopUpdate(snapshot) {
+    applyStop(endStop, snapshot)
+}
+
+function handleDialChange(payload) {
+    if (payload?.start) applyStop(startStop, payload.start)
+    if (payload?.end) applyStop(endStop, payload.end)
+}
+
 function timeFromStop(stop) {
     if (stop.mode === 'clock') {
         return {
@@ -314,12 +327,12 @@ function hydrateStopsFromActions(actions) {
             autoBrightness.luxMax = luxMax
             autoBrightness.brightnessMin = clampNumberLocal(
                 brightnessAction.source.outputMin ?? autoBrightness.brightnessMin,
-                1,
+                0,
                 autoBrightness.brightnessMax
             )
             autoBrightness.brightnessMax = clampNumberLocal(
                 brightnessAction.source.outputMax ?? autoBrightness.brightnessMax,
-                autoBrightness.brightnessMin,
+                Math.max(autoBrightness.brightnessMin, 0),
                 100
             )
         } else {
@@ -702,8 +715,8 @@ function buildBrightnessAction() {
                 sensorId: autoBrightness.sensorId || '',
                 sensorMin,
                 sensorMax,
-                outputMin: clampNumberLocal(autoBrightness.brightnessMin, 1, 100),
-                outputMax: clampNumberLocal(autoBrightness.brightnessMax, 1, 100)
+                outputMin: clampNumberLocal(autoBrightness.brightnessMin, 0, 100),
+                outputMax: clampNumberLocal(autoBrightness.brightnessMax, 0, 100)
             }
         }
     }
@@ -801,6 +814,7 @@ async function saveScenario() {
     scenarioMessage.value = ''
     try {
         const payload = buildScenarioPayload()
+        console.info('[ScenarioView] sending scenario payload', payload)
         const response = await scenarioRequest('/save', { method: 'POST', body: { scenario: payload } })
         if (response?.scenario) {
             Object.assign(scenario, createDefaultScenario(), response.scenario)
@@ -1158,13 +1172,77 @@ const currentStopForModal = computed(() => {
     return null
 })
 
+const SENSOR_MAX_LIMIT = 100000
+
+function toFiniteNumber(value) {
+    const numeric = Number(value)
+    return Number.isFinite(numeric) ? numeric : null
+}
+
+function findIlluminationProperty(device) {
+    const props = Array.isArray(device?.properties) ? device.properties : []
+    return props.find((prop) => {
+        const instance = String(prop?.parameters?.instance || prop?.state?.instance || '').toLowerCase()
+        return instance.includes('illumination') || instance.includes('lux')
+    })
+}
+
+function deriveSensorBounds(device) {
+    const property = findIlluminationProperty(device)
+    if (!property) return { minValue: null, maxValue: null }
+    const range = property?.parameters?.range || property?.parameters?.bounds || {}
+    const minCandidate = toFiniteNumber(range.min ?? property?.parameters?.min ?? property?.state?.min)
+    const maxCandidate = toFiniteNumber(range.max ?? property?.parameters?.max ?? property?.state?.max)
+    const cappedMin = Number.isFinite(minCandidate)
+        ? Math.min(Math.max(0, minCandidate), SENSOR_MAX_LIMIT - 1)
+        : null
+    let cappedMax = Number.isFinite(maxCandidate)
+        ? Math.max(0, Math.min(maxCandidate, SENSOR_MAX_LIMIT))
+        : null
+    if (cappedMin != null && cappedMax != null && cappedMax <= cappedMin) {
+        cappedMax = Math.min(SENSOR_MAX_LIMIT, cappedMin + 1)
+    }
+    return {
+        minValue: cappedMin,
+        maxValue: cappedMax
+    }
+}
+
+function looksLikeSensor(device) {
+    if (findIlluminationProperty(device)) return true
+    const payload = JSON.stringify(device || {})
+    return /sensor|датчик|illumination|lux/i.test(payload)
+}
+
+function deriveSensorCurrentLux(device) {
+    const property = findIlluminationProperty(device)
+    if (!property) return null
+    const candidate = toFiniteNumber(
+        property?.state?.value ??
+        property?.state?.val ??
+        property?.state?.current ??
+        property?.state?.lux ??
+        property?.state?.illumination
+    )
+    if (!Number.isFinite(candidate)) return null
+    return Math.max(0, Math.round(candidate))
+}
+
 const sensorOptions = computed(() =>
     catalog.devices
-        .filter((device) => /sensor|датчик|illumination|lux/i.test(JSON.stringify(device)))
-        .map((device) => ({
-            id: device.id,
-            name: device.name || 'Датчик'
-        }))
+        .filter((device) => Boolean(findIlluminationProperty(device)))
+        .map((device) => {
+            const bounds = deriveSensorBounds(device)
+            const minValue = bounds.minValue ?? 1
+            const maxValue = bounds.maxValue ?? SENSOR_MAX_LIMIT
+            return {
+                id: device.id,
+                name: device.name || 'Датчик',
+                maxValue,
+                minValue,
+                currentLux: deriveSensorCurrentLux(device)
+            }
+        })
 )
 
 watch(
@@ -1219,19 +1297,23 @@ async function handleDelete() {
 
         <div class="dial-layout">
             <div class="dial-column">
-                <ScenarioDialCircle :start-stop="startStop" :end-stop="endStop"
-                    :auto-brightness="autoBrightnessActive" :current-status-label="scenarioStatusLabel"
-                    :scenario-status="scenarioDialStatus" :sunrise-minute="sunriseTime"
-                    :sunset-minute="sunsetTime" :dial-face-ratio="dialFaceRatio"
-                    :current-minute="currentWorldMinute" @open-start-editor="openModal('state', 'start')"
-                    @open-end-editor="openModal('state', 'end')" @resume="scenarioStatus = 'running'" />
-                <div class="weekday-picker">
-                    <p>Дни недели</p>
-                    <div class="weekday-grid">
-                        <button v-for="day in weekdayOptions" :key="day.value" type="button" class="weekday-btn"
-                            :class="{ active: selectedDays.includes(day.value) }" @click="toggleDay(day.value)">
-                            {{ day.label }}
-                        </button>
+                <div class="dial-card">
+                    <ScenarioDialCircle :start-stop="startStop" :end-stop="endStop"
+                        :auto-brightness="autoBrightnessActive" :current-status-label="scenarioStatusLabel"
+                        :scenario-status="scenarioDialStatus" :sunrise-minute="sunriseTime" :sunset-minute="sunsetTime"
+                        :dial-face-ratio="dialFaceRatio" :current-minute="currentWorldMinute"
+                        :scenario-segment-radius="130" @update:start-stop="handleStartStopUpdate"
+                        @update:end-stop="handleEndStopUpdate" @change="handleDialChange"
+                        @open-start-editor="openModal('state', 'start')" @open-end-editor="openModal('state', 'end')"
+                        @resume="scenarioStatus = 'running'" />
+                    <div class="weekday-picker">
+                        <p>Дни запуска</p>
+                        <div class="weekday-grid">
+                            <button v-for="day in weekdayOptions" :key="day.value" type="button" class="weekday-btn"
+                                :class="{ active: selectedDays.includes(day.value) }" @click="toggleDay(day.value)">
+                                {{ day.label }}
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1255,7 +1337,7 @@ async function handleDelete() {
         </div>
 
         <StopStateSheet :open="activeModal === 'state'" v-if="currentStopForModal" :stop="currentStopForModal"
-            :palette="colorPalette" :context="modalPayload === 'start' ? 'start' : 'end'"
+            :palette="colorPalette" :time="scenario.time" :context="modalPayload === 'start' ? 'start' : 'end'"
             :auto-brightness="autoBrightness" :sensor-options="sensorOptions" @close="closeModal" />
 
         <Teleport to="body">
@@ -1290,6 +1372,12 @@ async function handleDelete() {
     width: 100%;
     max-width: 1000px;
     margin: 0 auto;
+}
+
+@media (max-width: 900px) {
+    .scenario-dial-page {
+        padding-bottom: 240px;
+    }
 }
 
 .title-row {
@@ -1384,6 +1472,17 @@ async function handleDelete() {
     max-width: 500px;
 }
 
+.dial-card {
+    background: var(--surface-card);
+    border: 1px solid var(--surface-border);
+    border-radius: 28px;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    box-shadow: 0 20px 40px rgba(2, 9, 25, 0.35);
+}
+
 .settings-column {
     display: flex;
     flex-direction: column;
@@ -1397,11 +1496,7 @@ async function handleDelete() {
 }
 
 .weekday-picker {
-    margin-top: 18px;
-    padding: 12px;
-    background: var(--surface-card);
-    border-radius: 16px;
-    border: 1px solid var(--surface-border);
+    margin: 0;
 }
 
 .weekday-picker p {
@@ -1420,7 +1515,7 @@ async function handleDelete() {
     background: transparent;
     color: var(--text-primary);
     border-radius: 999px;
-    padding: 6px 0;
+    padding: 12px 0;
     font-weight: 600;
     font-size: 12px;
     transition: background var(--transition-base), color var(--transition-base);

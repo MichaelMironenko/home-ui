@@ -35,6 +35,10 @@ const props = defineProps({
         type: Number,
         default: 0.62
     },
+    scenarioSegmentRadius: {
+        type: Number,
+        default: null
+    },
     currentMinute: {
         type: Number,
         default: null
@@ -52,13 +56,25 @@ const emit = defineEmits([
 
 const BASE_DIAL_SIZE = 320
 const FACE_CENTER = 100
-const FACE_RADIUS = 102
-const SUN_LINE_INNER_RADIUS = 86
-const SUN_LINE_OUTER_RADIUS = 100
+const DAY_NIGHT_RING_OUTER_RADIUS = FACE_CENTER
+const DAY_NIGHT_RING_WIDTH = 8
+const DAY_NIGHT_RING_INNER_RADIUS = DAY_NIGHT_RING_OUTER_RADIUS - DAY_NIGHT_RING_WIDTH
+const DAY_NIGHT_RING_OUTER_RATIO = DAY_NIGHT_RING_OUTER_RADIUS / FACE_CENTER
+const DAY_NIGHT_RING_INNER_RATIO = DAY_NIGHT_RING_INNER_RADIUS / FACE_CENTER
+const SCENARIO_SEGMENT_INSET = 4
+const DEFAULT_SEGMENT_OUTER_RADIUS = DAY_NIGHT_RING_INNER_RADIUS - SCENARIO_SEGMENT_INSET
+const FACE_RADIUS = DEFAULT_SEGMENT_OUTER_RADIUS
+const SUN_LINE_INNER_RADIUS = DAY_NIGHT_RING_INNER_RADIUS
+const SUN_LINE_OUTER_RADIUS = DAY_NIGHT_RING_OUTER_RADIUS
+const TICK_OUTER_RADIUS = DAY_NIGHT_RING_OUTER_RADIUS
+const TICK_INNER_RADIUS_MAJOR = DAY_NIGHT_RING_INNER_RADIUS
+const TICK_INNER_RADIUS_MINOR = DAY_NIGHT_RING_INNER_RADIUS
+const HOUR_NUMBER_RADIUS = (DAY_NIGHT_RING_OUTER_RADIUS + DAY_NIGHT_RING_INNER_RADIUS + 20) / 2
+const MIN_DIAL_FACE_RATIO = DEFAULT_SEGMENT_OUTER_RADIUS / FACE_CENTER
+const MAX_DIAL_FACE_RATIO = 0.99
 const HANDLE_TAP_HOLD_MS = 300
 const HANDLE_TAP_MOVE_TOLERANCE = 6
 const minuteStep = 5
-const OFFSET_LIMIT = 60
 const MINUTES_PER_DAY = 1440
 const HALF_DAY_MINUTES = MINUTES_PER_DAY / 2
 const FULL_CIRCLE_DEG = 360
@@ -128,10 +144,28 @@ const trackRadius = computed(() =>
         0
     )
 )
-const handleShadowScale = computed(() => Math.max(0.65, dialScale.value))
-const offsetHandleSize = computed(() => Math.max(20, 24 * dialScale.value))
-const offsetHandleBorderWidth = computed(() => Math.max(0.75, dialScale.value * 0.8))
-const offsetRingStrokeWidth = computed(() => Math.max(6, 12 * dialScale.value))
+const scenarioSegmentOuterRadius = computed(() => {
+    const explicit = Number(props.scenarioSegmentRadius)
+    if (Number.isFinite(explicit) && explicit > 0) {
+        return Math.min(explicit, DEFAULT_SEGMENT_OUTER_RADIUS)
+    }
+    return DEFAULT_SEGMENT_OUTER_RADIUS
+})
+const scenarioSegmentRatio = computed(() => {
+    const radius = Number(scenarioSegmentOuterRadius.value)
+    if (!Number.isFinite(radius) || FACE_CENTER <= 0) return MIN_DIAL_FACE_RATIO
+    return Math.min(1, Math.max(MIN_DIAL_FACE_RATIO, radius / FACE_CENTER))
+})
+const scenarioSegmentOrbitRatio = computed(() => scenarioSegmentRatio.value)
+const dialFaceRatioValue = computed(() => {
+    const ratioProp = Number(props.dialFaceRatio)
+    if (Number.isFinite(ratioProp) && ratioProp >= scenarioSegmentRatio.value) {
+        return Math.min(MAX_DIAL_FACE_RATIO, ratioProp)
+    }
+    return scenarioSegmentRatio.value
+})
+
+const ratioToInsetPercent = (ratio) => `${(((1 - ratio) / 2) * 100).toFixed(4)}%`
 
 const startMinutes = computed(() => stopMinutes(localStartStop))
 const endMinutes = computed(() => stopMinutes(localEndStop))
@@ -286,12 +320,13 @@ const sunMarkerPoints = computed(() => {
 })
 
 const dialStyleVars = computed(() => {
-    const ratio = Number(props.dialFaceRatio) || 0.62
-    const baseGap = (1 - ratio) / 2
-    const scaledGap = Math.max(baseGap * 0.7, 0)
+    const ratio = dialFaceRatioValue.value
     return {
         '--dial-face-ratio': ratio,
-        '--dial-face-gap-override': `${(scaledGap * 100).toFixed(2)}%`
+        '--ring-outer-inset': ratioToInsetPercent(DAY_NIGHT_RING_OUTER_RATIO),
+        '--ring-inner-inset': ratioToInsetPercent(DAY_NIGHT_RING_INNER_RATIO),
+        '--dial-face-inset': ratioToInsetPercent(ratio),
+        '--hour-layer-inset': ratioToInsetPercent(HOUR_NUMBER_RADIUS / FACE_CENTER)
     }
 })
 
@@ -302,32 +337,6 @@ const currentNeedle = computed(() => {
         start: angleToPoint(angle, SUN_LINE_INNER_RADIUS),
         end: angleToPoint(angle, SUN_LINE_OUTER_RADIUS)
     }
-})
-
-const showStartOffsetHandle = computed(() => localStartStop?.mode !== 'clock')
-const showEndOffsetHandle = computed(() => localEndStop?.mode !== 'clock')
-
-const sunOffsetHandleRadius = computed(() => {
-    if (!dialMetrics.radius) return 0
-    return Math.min(dialMetrics.radius - 6, trackRadius.value + baseRingWidth.value / 2)
-})
-
-const startOffsetStyle = computed(() => {
-    if (!showStartOffsetHandle.value) return {}
-    const radius = sunOffsetHandleRadius.value > 0 ? sunOffsetHandleRadius.value : FACE_RADIUS + 12
-    return buildHandleStyle(positionForMinute(startMinutes.value, radius), {
-        size: offsetHandleSize.value,
-        borderWidth: offsetHandleBorderWidth.value
-    })
-})
-
-const endOffsetStyle = computed(() => {
-    if (!showEndOffsetHandle.value) return {}
-    const radius = sunOffsetHandleRadius.value > 0 ? sunOffsetHandleRadius.value : FACE_RADIUS + 12
-    return buildHandleStyle(positionForMinute(endMinutes.value, radius), {
-        size: offsetHandleSize.value,
-        borderWidth: offsetHandleBorderWidth.value
-    })
 })
 
 const dayNightGradient = computed(() => {
@@ -358,11 +367,12 @@ const hourLabels = computed(() => Array.from({ length: 12 }, (_, i) => i * 2))
 const tickMarks = computed(() =>
     Array.from({ length: 24 }, (_, hour) => {
         const angle = (hour / 24) * 360
-        const start = faceCoord(angle, 100)
-        const end = faceCoord(angle, 86)
+        const major = hour % 2 === 0
+        const start = faceCoord(angle, TICK_OUTER_RADIUS)
+        const end = faceCoord(angle, major ? TICK_INNER_RADIUS_MAJOR : TICK_INNER_RADIUS_MINOR)
         return {
             index: hour,
-            major: hour % 2 === 0,
+            major,
             x1: start.x,
             y1: start.y,
             x2: end.x,
@@ -374,7 +384,7 @@ const tickMarks = computed(() =>
 const hourNumberItems = computed(() =>
     hourLabels.value.map((hour) => {
         const angle = (hour / 24) * 360
-        const coord = faceCoord(angle, 100)
+        const coord = faceCoord(angle, HOUR_NUMBER_RADIUS)
         return {
             hour,
             angle,
@@ -385,21 +395,6 @@ const hourNumberItems = computed(() =>
 )
 
 const mainArcRadius = computed(() => trackRadius.value)
-
-const offsetRingRadius = computed(() => (SUN_LINE_INNER_RADIUS + SUN_LINE_OUTER_RADIUS) / 2)
-const startOffsetRingArc = computed(() =>
-    buildOffsetArc(startAnchorMinutes.value, startMinutes.value, 'start', localStartStop, offsetRingRadius.value)
-)
-const endOffsetRingArc = computed(() =>
-    buildOffsetArc(endAnchorMinutes.value, endMinutes.value, 'end', localEndStop, offsetRingRadius.value)
-)
-
-const offsetRingArcs = computed(() => {
-    const arcs = []
-    if (startOffsetRingArc.value) arcs.push(startOffsetRingArc.value)
-    if (endOffsetRingArc.value) arcs.push(endOffsetRingArc.value)
-    return arcs
-})
 
 const startFlagStyle = computed(() =>
     buildRadialFlagStyle(startMinutes.value, 'start', gradientStartColor.value)
@@ -424,48 +419,23 @@ function angleToPoint(angle, radius = FACE_RADIUS) {
 }
 
 function buildSegmentPath(segment) {
+    const outerRadius = scenarioSegmentOuterRadius.value
     const startAngle = minuteToAngle(segment.startMinute || 0)
     const sweep = Math.min(
         Math.max(0.5, (Number(segment.spanMinutes) / MINUTES_PER_DAY) * FULL_CIRCLE_DEG),
         FULL_CIRCLE_DEG - 0.001
     )
     const endAngle = startAngle + sweep
-    const startPoint = angleToPoint(startAngle)
-    const endPoint = angleToPoint(endAngle)
+    const startPoint = angleToPoint(startAngle, outerRadius)
+    const endPoint = angleToPoint(endAngle, outerRadius)
     const largeArc = sweep > 180 ? 1 : 0
     return {
         key: segment.key,
         color: segment.color || '#94a3b8',
         pulse: !!segment.pulse,
         single: !!segment.single,
-        path: `M ${FACE_CENTER} ${FACE_CENTER} L ${startPoint.x} ${startPoint.y} A ${FACE_RADIUS} ${FACE_RADIUS} 0 ${largeArc} 1 ${endPoint.x} ${endPoint.y} Z`
+        path: `M ${FACE_CENTER} ${FACE_CENTER} L ${startPoint.x} ${startPoint.y} A ${outerRadius} ${outerRadius} 0 ${largeArc} 1 ${endPoint.x} ${endPoint.y} Z`
     }
-}
-
-function buildOffsetArc(anchorMinutes, actualMinutes, key, stop, radius) {
-    if (!Number.isFinite(anchorMinutes) || !Number.isFinite(actualMinutes)) return null
-    if (stop?.mode === 'clock') return null
-    const diff = minutesDiff(actualMinutes, anchorMinutes)
-    if (!diff || radius <= 0) return null
-    const accent = stopColorHex(stop)
-    const color = blendHex('#f8fafc', accent, key === 'start' ? 0.55 : 0.4)
-    return {
-        key,
-        path: describeOffsetArcPath(anchorMinutes, actualMinutes, radius),
-        color
-    }
-}
-
-function describeOffsetArcPath(anchorMin, targetMin, radius) {
-    const diff = minutesDiff(targetMin, anchorMin)
-    if (!diff || radius <= 0) return ''
-    const startAngle = minuteToAngle(anchorMin)
-    const endAngle = minuteToAngle(targetMin)
-    const start = angleToPoint(startAngle, radius)
-    const end = angleToPoint(endAngle, radius)
-    const largeArcFlag = Math.abs(diff) > HALF_DAY_MINUTES ? 1 : 0
-    const sweepFlag = diff >= 0 ? 1 : 0
-    return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArcFlag} ${sweepFlag} ${end.x} ${end.y}`
 }
 
 function hourNumberStyle(item) {
@@ -475,7 +445,7 @@ function hourNumberStyle(item) {
     const dx = baseX - center
     const dy = baseY - center
     const distance = Math.hypot(dx, dy) || 1
-    const outward = 1.5
+    const outward = Math.max(2, DAY_NIGHT_RING_WIDTH * 0.15)
     const adjustedX = baseX + (dx / distance) * outward
     const adjustedY = baseY + (dy / distance) * outward
     const x = (adjustedX / 200) * 100
@@ -526,23 +496,9 @@ function positionForMinute(minute, radiusOverride = null, radiusOffset = 30) {
     }
 }
 
-function buildHandleStyle(coords, { size = 40, color, borderWidth } = {}) {
-    const style = {
-        width: `${size}px`,
-        height: `${size}px`,
-        transform: `translate(${coords.x - size / 2}px, ${coords.y - size / 2}px)`
-    }
-    if (color) style.background = color
-    if (borderWidth != null) style.borderWidth = `${borderWidth}px`
-    style.boxShadow = `0 ${10 * handleShadowScale.value}px ${25 * handleShadowScale.value}px rgba(0, 0, 0, 0.45)`
-    return style
-}
-
 function buildRadialFlagStyle(minutes, type, accentColor) {
     const dialRadius = dialMetrics.radius
     if (!dialRadius || !Number.isFinite(minutes)) return {}
-    const faceRadius = dialRadius * (props.dialFaceRatio || 0.63)
-    const arcRadius = mainArcRadius.value || faceRadius
     const arcWidth = Math.max(scenarioArcWidth.value, 28 * dialScale.value)
     const width = Math.max(arcWidth * 1.05, 48 * dialScale.value)
     const height = Math.max(width * 0.15, 15 * dialScale.value)
@@ -552,8 +508,10 @@ function buildRadialFlagStyle(minutes, type, accentColor) {
     const angleRad = (orbitAngleDeg * Math.PI) / 180
     const cos = Math.cos(angleRad)
     const sin = Math.sin(angleRad)
-    const ringInnerEdge = Math.max(arcRadius - arcWidth / 2, faceRadius * 0.5)
-    const radialCenter = Math.max(ringInnerEdge - width * 0.35, width / 2)
+    const targetOrbit = dialRadius * scenarioSegmentOrbitRatio.value
+    const minRadius = width / 2
+    const maxRadius = Math.max(width / 2, dialRadius - width * 0.1)
+    const radialCenter = Math.min(maxRadius, Math.max(targetOrbit - width / 2, minRadius))
     const tangentDirection = type === 'start' ? -1 : 1
     const tangentOffset = height * 0.08 * tangentDirection
     const centerX = dialRadius + cos * radialCenter - Math.sin(angleRad) * tangentOffset
@@ -613,8 +571,8 @@ function flushStopEmitForHandle(handle) {
 }
 
 function handleToStopType(handle) {
-    if (handle === 'start' || handle === 'start-offset') return 'start'
-    if (handle === 'end' || handle === 'end-offset') return 'end'
+    if (handle === 'start') return 'start'
+    if (handle === 'end') return 'end'
     return ''
 }
 
@@ -729,14 +687,6 @@ function handleDialPointerMove(event) {
     if (event.pointerType === 'touch') event.preventDefault()
     const pointerMinutes = pointerToMinutes(event)
     if (!Number.isFinite(pointerMinutes)) return
-    if (draggingHandle.value === 'start-offset') {
-        emitOffsetChange('start', pointerMinutes)
-        return
-    }
-    if (draggingHandle.value === 'end-offset') {
-        emitOffsetChange('end', pointerMinutes)
-        return
-    }
     const pointerDelta = minutesDiff(pointerMinutes, dragState.activePointerMinutes)
     dragState.activePointerMinutes = pointerMinutes
     dragState.accumulatedMinutes += pointerDelta
@@ -830,19 +780,6 @@ function normalizeMinutes(value) {
 function snapMinutesValue(value) {
     if (!Number.isFinite(value)) return 0
     return Math.round(value / minuteStep) * minuteStep
-}
-
-function emitOffsetChange(type, pointerMinutes) {
-    const anchor = type === 'start' ? startAnchorMinutes.value : endAnchorMinutes.value
-    const diff = minutesDiff(pointerMinutes, anchor)
-    const clamped = Math.max(-OFFSET_LIMIT, Math.min(OFFSET_LIMIT, diff))
-    if (type === 'start' && localStartStop?.mode !== 'clock') {
-        localStartStop.offset = clamped
-        enqueueStopEmit('start')
-    } else if (type === 'end' && localEndStop?.mode !== 'clock') {
-        localEndStop.offset = clamped
-        enqueueStopEmit('end')
-    }
 }
 
 function toClockMode(stop, minutes) {
@@ -946,12 +883,6 @@ function minutesToTimeString(minute) {
             </button>
 
             <div class="day-night-ring" :style="{ '--day-ring-gradient': dayNightGradient }">
-                <svg class="offset-ring-overlay" viewBox="0 0 200 200">
-                    <g>
-                        <path v-for="arc in offsetRingArcs" :key="`ring-${arc.key}`" :d="arc.path"
-                            stroke-dasharray="1 1" :stroke="arc.color" :stroke-width="offsetRingStrokeWidth" />
-                    </g>
-                </svg>
                 <svg class="tick-overlay" viewBox="0 0 200 200">
                     <g class="tick-group">
                         <line v-for="tick in tickMarks" :key="tick.index" :class="{ major: tick.major }" :x1="tick.x1"
@@ -987,15 +918,6 @@ function minutesToTimeString(minute) {
                 </svg>
             </div>
 
-            <button v-if="showStartOffsetHandle" class="dial-offset-handle start" :style="startOffsetStyle"
-                @pointerdown="(event) => handleDialPointerDown('start-offset', event)">
-                <span class="offset-icon">☀</span>
-            </button>
-            <button v-if="showEndOffsetHandle" class="dial-offset-handle end" :style="endOffsetStyle"
-                @pointerdown="(event) => handleDialPointerDown('end-offset', event)">
-                <span class="offset-icon dusk">☾</span>
-            </button>
-
             <button class="dial-flag start" :style="startFlagStyle"
                 @pointerdown="(event) => handleDialPointerDown('start', event)">
                 <span class="flag-label">СТАРТ</span>
@@ -1011,10 +933,8 @@ function minutesToTimeString(minute) {
 <style scoped>
 /* Styles retained from the previous dial implementation */
 .dial-section {
-    background: #0b1220;
-    border-radius: 28px;
     padding: 16px;
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
+
 }
 
 .time-header {
@@ -1068,8 +988,10 @@ function minutesToTimeString(minute) {
     overflow: visible;
     touch-action: pan-y;
     background: transparent;
-    --dial-face-gap-default: calc((1 - var(--dial-face-ratio, 0.62)) / 2 * 70%);
-    --dial-face-gap: var(--dial-face-gap-override, var(--dial-face-gap-default));
+    --ring-outer-inset: 0%;
+    --ring-inner-inset: 10%;
+    --dial-face-inset: 14%;
+    --hour-layer-inset: 6%;
 }
 
 .pause-overlay {
@@ -1092,10 +1014,8 @@ function minutesToTimeString(minute) {
 }
 
 .day-night-ring {
-    --ring-expose: clamp(12px, 3vw, 28px);
-    --ring-width: clamp(24px, 5.5vw, 26px);
     position: absolute;
-    inset: calc(var(--dial-face-gap) - var(--ring-expose));
+    inset: var(--ring-outer-inset);
     border-radius: 50%;
     z-index: 3;
     background: var(--day-ring-gradient);
@@ -1106,7 +1026,7 @@ function minutesToTimeString(minute) {
 .day-night-ring::after {
     content: '';
     position: absolute;
-    inset: var(--ring-width);
+    inset: var(--ring-inner-inset);
     border-radius: 50%;
     background: #050811;
     z-index: 1;
@@ -1128,26 +1048,12 @@ function minutesToTimeString(minute) {
     z-index: 4;
 }
 
-.offset-ring-overlay {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    z-index: 2;
-}
-
-.offset-ring-overlay path {
-    fill: none;
-    stroke-linecap: round;
-    opacity: 0.85;
-}
-
 .day-night-ring .hour-number-layer {
     position: absolute;
-    top: calc(var(--ring-expose) - var(--dial-face-gap));
-    right: calc(var(--ring-expose) - var(--dial-face-gap));
-    bottom: calc(var(--ring-expose) - var(--dial-face-gap));
-    left: calc(var(--ring-expose) - var(--dial-face-gap));
+    top: var(--hour-layer-inset);
+    right: var(--hour-layer-inset);
+    bottom: var(--hour-layer-inset);
+    left: var(--hour-layer-inset);
     pointer-events: none;
     z-index: 5;
 }
@@ -1182,17 +1088,17 @@ function minutesToTimeString(minute) {
 
 .dial-face {
     position: absolute;
-    width: calc(var(--dial-face-ratio, 0.62) * 100%);
-    height: calc(var(--dial-face-ratio, 0.62) * 100%);
-    top: calc((1 - var(--dial-face-ratio, 0.62)) / 2 * 100%);
-    left: calc((1 - var(--dial-face-ratio, 0.62)) / 2 * 100%);
+    top: var(--dial-face-inset);
+    right: var(--dial-face-inset);
+    bottom: var(--dial-face-inset);
+    left: var(--dial-face-inset);
     border-radius: 50%;
     background: #050811;
     z-index: 4;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.65);
+    box-shadow: inset 0 0 310px rgba(0, 0, 0, 0.65);
     overflow: hidden;
 }
 
@@ -1234,32 +1140,6 @@ function minutesToTimeString(minute) {
     stroke-linecap: round;
     filter: drop-shadow(0 0 4px rgba(248, 113, 113, 0.45));
     pointer-events: none;
-}
-
-.dial-offset-handle {
-    position: absolute;
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    border: 1px solid rgba(255, 255, 255, 0.6);
-    background: rgba(5, 8, 17, 0.95);
-    color: #fcd34d;
-    font-size: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 6;
-    touch-action: none;
-}
-
-.dial-offset-handle .offset-icon {
-    font-size: 12px;
-    line-height: 1;
-    color: #fbbf24;
-}
-
-.dial-offset-handle .offset-icon.dusk {
-    color: #fb923c;
 }
 
 .dial-flag {

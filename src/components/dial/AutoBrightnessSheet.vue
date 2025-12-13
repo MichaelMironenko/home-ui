@@ -65,20 +65,20 @@ function toggleEnabled() {
           Яркость при мин.
           <input
             type="number"
-            min="1"
+            min="0"
             :max="modelValue.brightnessMax"
             v-model.number="modelValue.brightnessMin"
-            @change="modelValue.brightnessMin = lock(modelValue.brightnessMin, 1, modelValue.brightnessMax)"
+            @change="modelValue.brightnessMin = lock(modelValue.brightnessMin, 0, modelValue.brightnessMax)"
           />
         </label>
         <label class="field">
           Яркость при макс.
           <input
             type="number"
-            :min="modelValue.brightnessMin"
+            :min="Math.max(modelValue.brightnessMin, 0)"
             max="100"
             v-model.number="modelValue.brightnessMax"
-            @change="modelValue.brightnessMax = lock(modelValue.brightnessMax, modelValue.brightnessMin, 100)"
+            @change="modelValue.brightnessMax = lock(modelValue.brightnessMax, Math.max(modelValue.brightnessMin, 0), 100)"
           />
         </label>
       </div>
