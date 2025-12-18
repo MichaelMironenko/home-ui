@@ -2,7 +2,7 @@
 import { computed, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AutoLightEditor from '../components/AutoLightEditor.vue'
-import { setDocumentTitle } from '../utils/pageTitle'
+import { setDocumentDescription, setDocumentTitle } from '../utils/pageTitle'
 
 const route = useRoute()
 const router = useRouter()
@@ -17,6 +17,11 @@ const isCreateMode = computed(() => route.name === 'auto-light-create')
 
 watchEffect(() => {
   setDocumentTitle(isCreateMode.value ? 'Новый автосценарий света' : 'Автоматический свет')
+  setDocumentDescription(
+    isCreateMode.value
+      ? 'Создайте автосценарий света в ExtraHub: адаптивная яркость, температура и расписания.'
+      : 'Редактирование автосценария света ExtraHub: адаптивный свет по времени, яркости и присутствию.'
+  )
 })
 
 function handleSaved(id) {

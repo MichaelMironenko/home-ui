@@ -2,12 +2,13 @@
 import { ref, onMounted } from 'vue'
 import DeviceGrid from '../components/DeviceGrid.vue'
 import { getConfig } from '../lib/api'
-import { setDocumentTitle } from '../utils/pageTitle'
+import { setDocumentDescription, setDocumentTitle } from '../utils/pageTitle'
 
 const apiBase = ref(null)
 const loading = ref(true)
 
-setDocumentTitle('Главная')
+setDocumentTitle('Устройства')
+setDocumentDescription('Каталог и текущее состояние устройств Яндекс Дома: включайте, отключайте и проверяйте статусы в ExtraHub.')
 
 onMounted(async () => {
   try {

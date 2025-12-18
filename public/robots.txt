@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /
+
+# Разрешаем индексировать только публичные разделы
+Disallow: /devices
+Disallow: /scenarios
+Disallow: /legacy-scenarios
+Disallow: /auto-light
+Disallow: /events
+Disallow: /profile
+
+# Укажите прод-домен UI, чтобы поисковики знали верный хост
+Sitemap: https://example.com/sitemap.xml

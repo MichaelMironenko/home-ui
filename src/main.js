@@ -2,6 +2,7 @@ import { createApp } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import './style.css'
 import App from './App.vue'
+import CapabilitiesView from './views/CapabilitiesView.vue'
 import HomeView from './views/HomeView.vue'
 import ScenariosListView from './views/ScenariosListView.vue'
 import ScenarioView from './views/ScenarioView.vue'
@@ -17,7 +18,8 @@ import { useProfile } from './composables/useProfile'
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
-    { path: '/', name: 'home', component: HomeView },
+    { path: '/', name: 'landing', component: CapabilitiesView, meta: { public: true } },
+    { path: '/devices', name: 'devices', component: HomeView },
     { path: '/scenarios', name: 'scenarios-list', component: ScenariosListView },
     { path: '/scenarios/new', name: 'scenario-create', component: ScenarioView },
     { path: '/scenarios/:id', name: 'scenario-edit', component: ScenarioView, props: true },
@@ -63,8 +65,12 @@ router.beforeEach(async (to, from, next) => {
   }
 
   if (auth.user.value && to.name === 'login') {
-    const target = typeof to.query.redirect === 'string' && to.query.redirect.length ? to.query.redirect : '/'
-    next(target.startsWith('/') ? target : { path: '/' })
+    const queryRedirect = typeof to.query.redirect === 'string' && to.query.redirect.length ? to.query.redirect : ''
+    if (queryRedirect && queryRedirect.startsWith('/')) {
+      next(queryRedirect)
+    } else {
+      next({ name: 'scenarios-list' })
+    }
     return
   }
 

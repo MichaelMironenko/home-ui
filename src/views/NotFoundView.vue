@@ -1,14 +1,15 @@
 <script setup>
-import { setDocumentTitle } from '../utils/pageTitle'
+import { setDocumentDescription, setDocumentTitle } from '../utils/pageTitle'
 
 setDocumentTitle('Страница не найдена')
+setDocumentDescription('Страница не найдена — вернитесь на главную или к списку сценариев ExtraHub.')
 </script>
 
 <template>
   <main class="not-found">
     <h1>Страница не найдена</h1>
     <p>Похоже, вы перешли по несуществующему адресу.</p>
-    <RouterLink class="btn" :to="{ name: 'home' }">На главную</RouterLink>
+    <RouterLink class="btn" :to="{ name: 'landing' }">На главную</RouterLink>
     <RouterLink class="btn secondary" :to="{ name: 'scenarios-list' }">К сценариям</RouterLink>
   </main>
 </template>

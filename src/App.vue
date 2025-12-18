@@ -35,8 +35,8 @@ async function logout() {
         <header v-if="!isLoginRoute" class="app-header">
             <h1>Smart Home</h1>
             <nav>
-                <RouterLink to="/" class="nav-link" exact-active-class="active">Главная</RouterLink>
                 <RouterLink to="/scenarios" class="nav-link" active-class="active">Сценарии</RouterLink>
+                <RouterLink to="/devices" class="nav-link" exact-active-class="active">Устройства</RouterLink>
                 <RouterLink to="/events" class="nav-link" active-class="active">История</RouterLink>
             </nav>
             <RouterLink v-if="currentUser" :to="{ name: 'profile' }" class="profile-badge"
@@ -48,17 +48,6 @@ async function logout() {
         <router-view />
 
         <footer v-if="!isLoginRoute" class="mobile-tabbar" role="navigation" aria-label="Главные разделы">
-            <RouterLink :to="{ name: 'home' }" class="tab-link" :class="{ active: route.name === 'home' }">
-                <span class="icon">
-                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                        <path
-                            d="M4.75 10.75 12 4l7.25 6.75V20a.75.75 0 0 1-.75.75h-4.5a.75.75 0 0 1-.75-.75v-4.25h-2.5V20a.75.75 0 0 1-.75.75H5.5a.75.75 0 0 1-.75-.75z"
-                            fill="currentColor" />
-                    </svg>
-                </span>
-                <span class="label">Главная</span>
-            </RouterLink>
-
             <RouterLink :to="{ name: 'scenarios-list' }" class="tab-link" :class="{ active: isScenariosRoute }">
                 <span class="icon">
                     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -71,6 +60,17 @@ async function logout() {
                     </svg>
                 </span>
                 <span class="label">Сценарии</span>
+            </RouterLink>
+
+            <RouterLink :to="{ name: 'devices' }" class="tab-link" :class="{ active: route.name === 'devices' }">
+                <span class="icon">
+                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <path
+                            d="M4.75 10.75 12 4l7.25 6.75V20a.75.75 0 0 1-.75.75h-4.5a.75.75 0 0 1-.75-.75v-4.25h-2.5V20a.75.75 0 0 1-.75.75H5.5a.75.75 0 0 1-.75-.75z"
+                            fill="currentColor" />
+                    </svg>
+                </span>
+                <span class="label">Устройства</span>
             </RouterLink>
 
             <RouterLink :to="{ name: 'events' }" class="tab-link" :class="{ active: route.name === 'events' }">
@@ -96,6 +96,9 @@ async function logout() {
 <style scoped>
 .app-shell {
     min-height: 100vh;
+    width: 100%;
+    max-width: 960px;
+    margin: 0 auto;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     touch-action: pan-y;
@@ -110,7 +113,7 @@ async function logout() {
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 16px 24px;
+    padding: 8px 24px;
     background: var(--surface-muted);
     color: var(--text-primary);
     border-bottom: 1px solid var(--surface-border);
@@ -270,7 +273,7 @@ nav {
     }
 
     .app-header {
-        padding: 14px 16px;
+        padding: 8px 16px;
         border-bottom: 1px solid rgba(255, 255, 255, 0.06);
     }
 

@@ -2,13 +2,14 @@
 import { computed, watchEffect } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
-import { setDocumentTitle } from '../utils/pageTitle'
+import { setDocumentDescription, setDocumentTitle } from '../utils/pageTitle'
 
 const route = useRoute()
 const auth = useAuth()
 
 watchEffect(() => {
   setDocumentTitle('Вход')
+  setDocumentDescription('Авторизуйтесь через Яндекс ID, чтобы управлять сценариями света и устройствами в ExtraHub.')
 })
 
 const redirectUrl = computed(() => {

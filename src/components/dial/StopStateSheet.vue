@@ -43,7 +43,7 @@ const isStartContext = computed(() => props.context !== 'end')
 const autoMode = computed(() => Boolean(props.autoBrightness?.enabled))
 const temperatureGradient = 'linear-gradient(90deg, #ff9b0a 0%, #fffbe8 70%, #c8edff 100%)'
 const brightnessGradient = 'linear-gradient(90deg, rgba(255,255,255,0.3) 0%, rgba(255,255,255,1) 100%)'
-const sheetTitle = computed(() => (props.context === 'end' ? 'Финальное состояние' : 'Стартовое состояние'))
+const sheetTitle = computed(() => (props.context === 'end' ? 'Конец сценария' : 'Начало сценария'))
 const timeSectionTitle = computed(() => (props.context === 'end' ? 'Время окончания' : 'Время старта'))
 
 const MINUTES_PER_DAY = 1440
@@ -1065,7 +1065,7 @@ function openCustomColorPicker() {
     position: relative;
     --item-height: 34px;
     --picker-height: 180px;
-    --item-font-size: 16px;
+    --item-font-size: 18px;
     --picker-bg: rgb(12 19 36);
     height: var(--picker-height);
     width: 100%;

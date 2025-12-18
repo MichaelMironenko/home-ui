@@ -4,6 +4,7 @@ import ScenarioDevicesSection from './ScenarioDevicesSection.vue'
 import TuningSliderColumn from './TuningSliderColumn.vue'
 import ChartBlock from './ChartBlock.vue'
 import PresenceOptions from './PresenceOptions.vue'
+import AdaptiveLightRoomDemo from './AdaptiveLightRoomDemo.vue'
 import { useTargetDevices } from '../composables/useTargetDevices'
 import { useScenarioApi } from '../composables/useScenarioApi'
 import { useAdjustControl } from '../composables/useAdjustControl'
@@ -1005,6 +1006,8 @@ watch(
                         {{ historyExpanded ? 'Скрыть историю' : 'История' }}
                     </button>
                 </header>
+
+                <AdaptiveLightRoomDemo />
 
                 <div class="tuning-grid">
                     <TuningSliderColumn

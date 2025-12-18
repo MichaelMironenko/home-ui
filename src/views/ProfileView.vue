@@ -3,13 +3,14 @@ import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useProfile } from '../composables/useProfile'
 import { useAuth } from '../composables/useAuth'
-import { setDocumentTitle } from '../utils/pageTitle'
+import { setDocumentDescription, setDocumentTitle } from '../utils/pageTitle'
 
 const profileStore = useProfile()
 const auth = useAuth()
 const route = useRoute()
 const router = useRouter()
 setDocumentTitle('Профиль')
+setDocumentDescription('Профиль ExtraHub: город, часовой пояс и ключи интеграции для управления сценариями света.')
 
 const profileData = computed(() => profileStore.profile.value)
 const instructions = computed(() => profileStore.instructions.value)

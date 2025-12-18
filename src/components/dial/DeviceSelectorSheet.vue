@@ -87,8 +87,8 @@ function handleDeviceToggle(device, group, event) {
 .section-title {
     margin: 0;
     font-weight: 600;
-    color: #e5e7eb;
-    font-size: 14px;
+    color: #717884;
+    font-size: 19px;
 }
 
 .group-row,
@@ -109,7 +109,8 @@ function handleDeviceToggle(device, group, event) {
     margin: 0;
     font-weight: 600;
     color: #e5e7eb;
-    font-size: 14px;
+    font-size: 17px;
+    margin-left: 12px;
 }
 
 .group-meta {
@@ -133,7 +134,7 @@ function handleDeviceToggle(device, group, event) {
     flex-direction: column;
     gap: 2px;
     margin-top: 4px;
-    padding: 0 12px 0 18px;
+    padding: 0 12px 0 32px;
 }
 
 .group-device-row {
@@ -151,7 +152,7 @@ function handleDeviceToggle(device, group, event) {
 }
 
 .group-device-row span {
-    font-size: 12px;
+    font-size: 15px;
     color: #e5e7eb;
 }
 
@@ -195,7 +196,7 @@ function handleDeviceToggle(device, group, event) {
 }
 
 .toggle.active {
-    background: #34d399;
+    background: var(--primary);
 }
 
 .toggle.active span {

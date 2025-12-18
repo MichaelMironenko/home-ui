@@ -123,7 +123,6 @@ watch(
     padding: 4px;
     gap: var(--segmented-gap, 4px);
     position: relative;
-    margin: 8px 0;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), inset 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
@@ -160,6 +159,7 @@ watch(
     color: #94a3b8;
     border-radius: 10px;
     padding: 8px;
+    font-size: 14px;
     font-weight: 600;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
@@ -168,8 +168,6 @@ watch(
 }
 
 .segmented.dense button {
-    padding: 6px 10px;
-    font-size: 13px;
     border-radius: 8px;
 }
 

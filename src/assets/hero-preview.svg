@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="360" viewBox="0 0 520 360" fill="none">
+  <rect width="520" height="360" rx="32" fill="#020617" />
+  <rect x="36" y="36" width="448" height="288" rx="28" fill="url(#bg)" />
+  <rect x="72" y="86" width="160" height="188" rx="24" fill="#020617" opacity="0.35" />
+  <rect x="100" y="118" width="104" height="124" rx="18" fill="#0f172a" stroke="rgba(255,255,255,0.2)" stroke-width="2" />
+  <circle cx="152" cy="176" r="40" fill="url(#lamp)" />
+  <path d="M144 228h16" stroke="rgba(255,255,255,0.55)" stroke-width="4" stroke-linecap="round" />
+  <rect x="260" y="96" width="192" height="44" rx="22" fill="rgba(15,23,42,0.55)" />
+  <rect x="276" y="108" width="44" height="20" rx="10" fill="#a855f7" />
+  <rect x="328" y="108" width="44" height="20" rx="10" fill="#ec4899" opacity="0.8" />
+  <rect x="380" y="108" width="44" height="20" rx="10" fill="#f97316" opacity="0.8" />
+  <rect x="260" y="168" width="192" height="20" rx="10" fill="rgba(15,23,42,0.65)" />
+  <rect x="260" y="204" width="192" height="20" rx="10" fill="rgba(15,23,42,0.5)" />
+  <rect x="260" y="240" width="192" height="20" rx="10" fill="rgba(15,23,42,0.35)" />
+  <rect x="260" y="276" width="128" height="20" rx="10" fill="rgba(15,23,42,0.35)" />
+  <defs>
+    <linearGradient id="bg" x1="36" y1="36" x2="484" y2="324" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#312e81" />
+      <stop offset="1" stop-color="#0f172a" />
+    </linearGradient>
+    <radialGradient id="lamp" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(152 176) rotate(90) scale(40)">
+      <stop stop-color="#fef3c7" />
+      <stop offset="1" stop-color="#fcd34d" />
+    </radialGradient>
+  </defs>
+</svg>

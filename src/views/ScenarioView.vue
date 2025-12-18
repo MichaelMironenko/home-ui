@@ -16,6 +16,7 @@ import StopPreviewList from '../components/dial/StopPreviewList.vue'
 import PresenceFooter from '../components/dial/PresenceFooter.vue'
 import DeviceSelectorSheet from '../components/dial/DeviceSelectorSheet.vue'
 import StopStateSheet from '../components/dial/StopStateSheet.vue'
+import SegmentedControl from '../components/dial/SegmentedControl.vue'
 import { useScenarioApi } from '../composables/useScenarioApi'
 import {
     hexToHsv,
@@ -24,7 +25,7 @@ import {
     temperatureToHex
 } from '../utils/colorUtils'
 import { summarizeStatusRecord, deriveScenarioListStatus } from '../utils/scenarioStatusDisplay'
-import { setDocumentTitle, SCENARIOS_TITLE } from '../utils/pageTitle'
+import { setDocumentDescription, setDocumentTitle, SCENARIOS_TITLE } from '../utils/pageTitle'
 
 const scenarioStatus = ref('running')
 const scenarioDisplayStatus = computed(() => {
@@ -89,13 +90,16 @@ function updateScenarioPageTitle() {
     const trimmedName = scenarioNameValue.value?.trim()
     if (trimmedName) {
         setDocumentTitle(trimmedName, SCENARIOS_TITLE)
+        setDocumentDescription(`Сценарий "${trimmedName}" в ExtraHub: настройка расписания, устройств и условий запуска.`)
         return
     }
     if (isCreateMode.value) {
         setDocumentTitle('Новый сценарий', SCENARIOS_TITLE)
+        setDocumentDescription('Создайте новый сценарий ExtraHub: выберите устройства, дни недели, яркость и цвет света.')
         return
     }
     setDocumentTitle('Сценарий', SCENARIOS_TITLE)
+    setDocumentDescription('Сценарий ExtraHub: настройка времени, устройств, яркости, цвета и условий присутствия.')
 }
 
 watch([scenarioNameValue, isCreateMode], updateScenarioPageTitle, { immediate: true })
@@ -1315,20 +1319,30 @@ async function handleDelete() {
                             </button>
                         </div>
                     </div>
+                    <div class="presence-inline-controls">
+                        <div class="presence-inline-header">
+                            <span>Когда запускать</span>
+                        </div>
+                        <SegmentedControl aria-label="Режим присутствия" dense :model-value="presenceMode"
+                            :options="presenceOptions.map((option) => ({ value: option.id, label: option.label }))"
+                            @update:model-value="presenceMode = $event" />
+                    </div>
                 </div>
             </div>
             <div class="settings-column">
                 <section class="compact-section">
-                    <TargetDevicesCard :loading="catalogLoading" :error="catalogError" :summary="selectedTargetsLabel"
-                        @open="openModal('devices')" />
-
                     <StopPreviewList :start-summary="startStateSummary" :end-summary="endStateSummary"
                         :auto-brightness-active="autoBrightnessActive" @open-start="openModal('state', 'start')"
                         @open-end="openModal('state', 'end')" />
+
+                    <TargetDevicesCard :loading="catalogLoading" :error="catalogError" :summary="selectedTargetsLabel"
+                        @open="openModal('devices')" />
                 </section>
 
-                <PresenceFooter :options="presenceOptions" :value="presenceMode" @update:value="presenceMode = $event"
+                <PresenceFooter :options="presenceOptions" :value="presenceMode" :show-toggle="false"
+                    @update:value="presenceMode = $event"
                     @save="handleSave" @delete="handleDelete" />
+
                 <div class="scenario-feedback">
                     <p v-if="scenarioMessage" class="status-info success">{{ scenarioMessage }}</p>
                     <p v-if="scenarioError" class="status-info error">{{ scenarioError }}</p>
@@ -1374,11 +1388,7 @@ async function handleDelete() {
     margin: 0 auto;
 }
 
-@media (max-width: 900px) {
-    .scenario-dial-page {
-        padding-bottom: 240px;
-    }
-}
+
 
 .title-row {
     display: flex;
@@ -1481,6 +1491,36 @@ async function handleDelete() {
     flex-direction: column;
     gap: 20px;
     box-shadow: 0 20px 40px rgba(2, 9, 25, 0.35);
+}
+
+.presence-inline-controls {
+    margin-top: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.presence-inline-header {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: rgba(226, 232, 240, 0.85);
+}
+
+.presence-inline-controls :deep(.segmented) {
+    width: 100%;
+}
+
+.presence-inline-controls :deep(.segmented button) {
+    white-space: nowrap;
+}
+
+.presence-inline-controls :deep(.segmented button:first-child) {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.presence-inline-controls :deep(.segmented button:last-child) {
+    flex: 0 0 auto;
 }
 
 .settings-column {

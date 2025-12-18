@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { trackFunctionCall } from '../lib/requestMetrics'
 import { getConfig } from '../lib/api'
 import { summarizeStatusRecord, deriveScenarioListStatus } from '../utils/scenarioStatusDisplay'
-import { setDocumentTitle, SCENARIOS_TITLE } from '../utils/pageTitle'
+import { setDocumentDescription, setDocumentTitle, SCENARIOS_TITLE } from '../utils/pageTitle'
 
 const router = useRouter()
 const cfg = ref({ base: '', keyHeader: 'x-api-key', keyValue: '' })
@@ -16,6 +16,7 @@ const nowTick = ref(Date.now())
 let nowTimer = null
 
 setDocumentTitle(SCENARIOS_TITLE)
+setDocumentDescription('Список сценариев ExtraHub: создавайте, редактируйте, ставьте на паузу и отслеживайте статус умного света.')
 
 function normalizeBase(raw = '') {
     return raw.replace(/\/+$/, '')
@@ -222,6 +223,9 @@ function scenarioStatusDisplay(item) {
                 <h1>Сценарии</h1>
             </div>
             <div class="actions">
+                <RouterLink class="info-link" :to="{ name: 'landing' }" target="_blank" rel="noopener">
+                    Что умеет Extrahub?
+                </RouterLink>
                 <button class="toggle create-button" type="button" @click="createScenario">Создать сценарий</button>
             </div>
         </header>
@@ -290,6 +294,20 @@ function scenarioStatusDisplay(item) {
 .actions {
     display: flex;
     gap: 8px;
+}
+
+.info-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.4);
+    color: #cbd5f5;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 14px;
+    background: rgba(15, 23, 42, 0.4);
 }
 
 .create-button {

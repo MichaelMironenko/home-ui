@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watchEffect } from 'vue'
 import { trackFunctionCall } from '../lib/requestMetrics'
 import { getConfig } from '../lib/api'
-import { setDocumentTitle } from '../utils/pageTitle'
+import { setDocumentDescription, setDocumentTitle } from '../utils/pageTitle'
 import { temperatureToHex } from '../utils/colorUtils'
 
 const cfg = ref({ base: '', keyHeader: 'x-api-key', keyValue: '' })
@@ -12,6 +12,7 @@ const events = ref([])
 
 watchEffect(() => {
     setDocumentTitle('Журнал сценариев')
+    setDocumentDescription('Журнал событий ExtraHub: когда запускались сценарии, кто инициировал и какие действия отправлены устройствам.')
 })
 
 function normalizeBase(url = '') {
@@ -107,6 +108,9 @@ function normalizeEvents(list) {
         const dedupedId = dupCount === 0 ? baseId : `${baseId}_${dupCount + 1}`
         seenIds.set(baseId, dupCount + 1)
 
+        const normalizedHex = normalizeHexColor(raw?.colorHex)
+        const colorLabel = typeof raw?.colorLabel === 'string' ? raw.colorLabel : ''
+
         return {
             id: dedupedId,
             timestamp,
@@ -115,13 +119,24 @@ function normalizeEvents(list) {
             triggerVariant,
             triggerLabel: formatTriggerLabel(raw?.origin),
             brightnessDisplay: typeof raw?.brightness === 'string' ? raw.brightness : '',
-            colorLabel: raw?.colorLabel || '',
+            colorLabel: colorLabel || (normalizedHex ? normalizedHex.toUpperCase() : ''),
             colorTemperature: Number.isFinite(raw?.colorTemperature) ? Number(raw.colorTemperature) : null,
-            colorHexDisplay: typeof raw?.colorHex === 'string' ? raw.colorHex : null,
+            colorHexDisplay: normalizedHex,
             sensorLux: Number.isFinite(raw?.sensorLux) ? Math.round(raw.sensorLux) : null,
         }
     })
     return mapped.filter(Boolean).sort((a, b) => b.timestamp - a.timestamp)
+}
+
+function normalizeHexColor(value) {
+    if (typeof value !== 'string') return null
+    const clean = value.trim().toLowerCase().replace(/^#/, '').replace(/^0x/, '')
+    if (/^[0-9a-f]{6}$/.test(clean)) return `#${clean}`
+    if (/^[0-9a-f]{3}$/.test(clean)) {
+        const expanded = clean.split('').map((ch) => ch + ch).join('')
+        return `#${expanded}`
+    }
+    return null
 }
 
 function colorSwatchStyle(event) {
