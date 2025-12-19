@@ -63,12 +63,23 @@ function formatTime(ts) {
     if (!Number.isFinite(ts)) return ''
     const date = new Date(ts)
     const toTwo = (v) => v.toString().padStart(2, '0')
-    return `${toTwo(date.getHours())}:${toTwo(date.getMinutes())}:${toTwo(date.getSeconds())}`
+    return `${toTwo(date.getHours())}:${toTwo(date.getMinutes())}`
 }
 
 function formatTriggerLabel(origin) {
     if (!origin) return ''
     return ORIGIN_LABELS[origin] || origin
+}
+
+function formatTriggerIcon(origin) {
+    if (!origin) return ''
+    if (ORIGIN_VARIANTS[origin] === 'timer') return ''
+    if (origin === 'save') return '💾'
+    if (origin === 'resume') return '▶'
+    if (origin === 'presence') return '👤'
+    if (origin === 'manual' || origin === 'manual-batch') return '▶'
+    if (origin.includes('pause')) return '⏸'
+    return '⚙'
 }
 
 const ORIGIN_LABELS = {
@@ -110,22 +121,71 @@ function normalizeEvents(list) {
 
         const normalizedHex = normalizeHexColor(raw?.colorHex)
         const colorLabel = typeof raw?.colorLabel === 'string' ? raw.colorLabel : ''
+        const scenarioName = raw?.scenarioName || raw?.scenarioId || 'Без имени'
+        const scenarioKey = String(raw?.scenarioId || raw?.scenarioName || scenarioName)
 
         return {
             id: dedupedId,
             timestamp,
             timeText: formatTime(timestamp),
-            scenarioName: raw?.scenarioName || raw?.scenarioId || 'Без имени',
+            scenarioName,
+            scenarioKey,
             triggerVariant,
             triggerLabel: formatTriggerLabel(raw?.origin),
-            brightnessDisplay: typeof raw?.brightness === 'string' ? raw.brightness : '',
+            triggerIcon: formatTriggerIcon(String(raw?.origin || '')),
+            brightnessDisplay: typeof raw?.brightness === 'string' ? raw.brightness.trim() : '',
             colorLabel: colorLabel || (normalizedHex ? normalizedHex.toUpperCase() : ''),
             colorTemperature: Number.isFinite(raw?.colorTemperature) ? Number(raw.colorTemperature) : null,
             colorHexDisplay: normalizedHex,
             sensorLux: Number.isFinite(raw?.sensorLux) ? Math.round(raw.sensorLux) : null,
         }
     })
-    return mapped.filter(Boolean).sort((a, b) => b.timestamp - a.timestamp)
+
+    const colorKeyOf = (event) => {
+        if (!event) return null
+        if (event.colorHexDisplay) return `hex:${event.colorHexDisplay}`
+        if (Number.isFinite(event.colorTemperature)) return `cct:${Math.round(event.colorTemperature)}`
+        if (event.colorLabel) return `label:${event.colorLabel}`
+        return null
+    }
+
+    const oldestFirst = mapped.filter(Boolean).sort((a, b) => a.timestamp - b.timestamp)
+    const lastStateByScenario = new Map()
+
+    const flaggedOldestFirst = oldestFirst.map((event) => {
+        const prev = lastStateByScenario.get(event.scenarioKey) || null
+
+        const currentBrightness = event.brightnessDisplay || ''
+        const prevBrightnessState = prev?.brightnessState || ''
+        const hasBrightnessData = Boolean(currentBrightness)
+        const showBrightness = Boolean(prev && hasBrightnessData && currentBrightness !== prevBrightnessState)
+
+        const currentColorKey = colorKeyOf(event)
+        const prevColorKeyState = prev?.colorKeyState || null
+        const showColor = Boolean(prev && currentColorKey && currentColorKey !== prevColorKeyState)
+
+        const nextBrightnessState = prev ? prevBrightnessState : ''
+        const nextColorKeyState = prev ? prevColorKeyState : null
+        lastStateByScenario.set(event.scenarioKey, {
+            brightnessState: hasBrightnessData ? currentBrightness : nextBrightnessState,
+            colorKeyState: currentColorKey || nextColorKeyState
+        })
+
+        const currentCct = Number.isFinite(event.colorTemperature) ? Math.round(event.colorTemperature) : null
+
+        return {
+            ...event,
+            brightnessDisplay: showBrightness ? event.brightnessDisplay : '',
+            colorTemperature: showColor ? currentCct : null,
+            colorHexDisplay: showColor ? event.colorHexDisplay : null,
+            colorLabel: showColor ? event.colorLabel : '',
+            _showCctOnly: showColor && currentCct != null && !event.colorHexDisplay && !event.colorLabel,
+            _showColorAny: Boolean(showColor),
+            _showBrightnessAny: Boolean(showBrightness),
+        }
+    })
+
+    return flaggedOldestFirst.reverse()
 }
 
 function normalizeHexColor(value) {
@@ -166,6 +226,44 @@ async function loadEvents() {
 
 const hasEvents = computed(() => events.value.length > 0)
 
+const groupedEvents = computed(() => {
+    const groups = []
+    for (const event of events.value) {
+        const lastGroup = groups[groups.length - 1]
+        if (!lastGroup || lastGroup.scenarioKey !== event.scenarioKey) {
+            groups.push({
+                id: `g_${event.scenarioKey}_${event.timestamp}`,
+                scenarioKey: event.scenarioKey,
+                scenarioName: event.scenarioName,
+                rows: []
+            })
+        }
+
+        const rowHasContent =
+            Boolean(event.triggerIcon) ||
+            Boolean(event.brightnessDisplay) ||
+            Boolean(event._showColorAny) ||
+            event.sensorLux != null
+
+        if (!rowHasContent) continue
+
+        groups[groups.length - 1].rows.push({
+            id: event.id,
+            timeText: event.timeText,
+            triggerIcon: event.triggerIcon,
+            triggerLabel: event.triggerLabel,
+            brightnessDisplay: event.brightnessDisplay,
+            _showColorAny: Boolean(event._showColorAny),
+            _showCctOnly: Boolean(event._showCctOnly),
+            colorLabel: event.colorLabel,
+            colorTemperature: event.colorTemperature,
+            colorHexDisplay: event.colorHexDisplay,
+            sensorLux: event.sensorLux,
+        })
+    }
+    return groups.filter((group) => group.rows.length > 0)
+})
+
 onMounted(async () => {
     await loadConfig()
     if (cfg.value.base) {
@@ -200,40 +298,48 @@ async function refreshAll() {
 
         <section class="timeline" v-else>
             <p v-if="!hasEvents" class="empty">Нет событий за выбранный период.</p>
-            <article v-for="event in events" :key="event.id" class="event-card">
-                <div class="event-row">
-                    <div class="event-time-block">
-                        <span class="event-time">{{ event.timeText }}</span>
-                        <span v-if="event.triggerLabel" class="event-trigger"
-                            :class="`trigger-${event.triggerVariant}`">{{ event.triggerLabel }}</span>
-                    </div>
-                    <div class="event-main">
-                        <div class="event-name">{{ event.scenarioName }}</div>
-                        <div class="event-metrics"
-                            v-if="event.brightnessDisplay || event.colorLabel || event.sensorLux != null">
-                            <span v-if="event.brightnessDisplay" class="metric metric-brightness">
-                                <span class="metric-icon" aria-hidden="true">💡</span>
-                                <span class="metric-value">{{ event.brightnessDisplay }}</span>
+            <article v-for="group in groupedEvents" :key="group.id" class="event-card">
+                <div class="event-head">
+                    <span class="event-name event-name--inline" :title="group.scenarioName">{{ group.scenarioName }}</span>
+                </div>
+	                <div class="event-rows">
+	                    <div v-for="row in group.rows" :key="row.id" class="event-row-line">
+	                        <div class="event-row-left">
+	                            <span class="event-row-time">{{ row.timeText }}</span>
+	                            <span
+	                                v-if="row.triggerIcon"
+	                                class="event-trigger-icon"
+	                                :title="row.triggerLabel"
+	                                aria-hidden="true"
+	                            >{{ row.triggerIcon }}</span>
+	                        </div>
+	                        <div class="event-metrics">
+	                            <span v-if="row.brightnessDisplay" class="metric metric-brightness">
+	                                <span class="metric-icon" aria-hidden="true">💡</span>
+	                                <span class="metric-value">{{ row.brightnessDisplay }}</span>
+	                            </span>
+                            <span v-if="row._showColorAny" class="metric metric-color">
+                                <span v-if="row.colorHexDisplay || row.colorTemperature" class="color-swatch"
+                                    :class="{ temperature: !row.colorHexDisplay }" :style="colorSwatchStyle(row)"></span>
+                                <span class="metric-value">
+                                    <template v-if="row.colorLabel">{{ row.colorLabel }}</template>
+                                    <template v-else-if="row._showCctOnly">{{ row.colorTemperature }}K</template>
+                                </span>
                             </span>
-                            <span v-if="event.colorLabel" class="metric metric-color">
-                                <span class="color-swatch" :class="{ temperature: !event.colorHexDisplay }"
-                                    :style="colorSwatchStyle(event)"></span>
-                                <span class="metric-value">{{ event.colorLabel }}</span>
-                            </span>
-                            <span v-if="event.sensorLux != null" class="metric">
+                            <span v-if="row.sensorLux != null" class="metric">
                                 <span class="metric-icon" aria-hidden="true">
                                     <svg viewBox="0 0 24 24" role="presentation">
                                         <path
                                             d="M12 4.5a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0v-1a1 1 0 0 1 1-1Zm6.364 3.136a1 1 0 0 1 0 1.414l-.707.707a1 1 0 0 1-1.414-1.414l.707-.707a1 1 0 0 1 1.414 0ZM18.5 13a1 1 0 0 1 0 2h-1a1 1 0 1 1 0-2h1Zm-12 0a1 1 0 1 1 0 2H5.5a1 1 0 0 1 0-2h1Zm1.257-5.243a1 1 0 0 1 0 1.414l-.707.707a1 1 0 0 1-1.414-1.414l.707-.707a1 1 0 0 1 1.414 0ZM12 9a4 4 0 1 1 0 8 4 4 0 0 1 0-8Zm0 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm-1 6.5h2V20a1 1 0 1 1-2 0v-2.5Z" />
                                     </svg>
                                 </span>
-                                <span class="metric-value">{{ event.sensorLux }} lx</span>
-                            </span>
-                        </div>
-                    </div>
-                </div>
-            </article>
-        </section>
+	                                <span class="metric-value">{{ row.sensorLux }} lx</span>
+	                            </span>
+	                        </div>
+	                    </div>
+	                </div>
+	            </article>
+	        </section>
     </main>
 </template>
 
@@ -423,29 +529,51 @@ async function refreshAll() {
     gap: 8px;
 }
 
-.event-row {
-    width: 100%;
-    display: flex;
-    align-items: flex-start;
-    gap: 18px;
-}
-
-.event-row:hover .event-name {
+.event-card:hover .event-name {
     color: #ffffff;
 }
 
-.event-time-block {
+.event-head {
     display: flex;
-    flex-direction: column;
-    gap: 4px;
-    align-items: flex-start;
-    flex: 0 0 80px;
+    align-items: center;
 }
 
-.event-time {
-    font-family: 'SFMono-Regular', monospace;
-    font-size: 12px;
+.event-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.event-row-line {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.event-row-left {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+    min-width: 68px;
+}
+
+.event-metrics {
+    flex: 1 1 auto;
+}
+
+.event-row-time {
+    font-size: 13px;
     color: #cbd5f5;
+    white-space: nowrap;
+}
+
+.event-trigger-icon {
+    flex: 0 0 auto;
+    font-size: 13px;
+    line-height: 1;
+    color: #93c5fd;
+    filter: saturate(0.9);
 }
 
 .event-trigger {
@@ -477,8 +605,16 @@ async function refreshAll() {
 .event-name {
     font-weight: 600;
     color: #f8fafc;
-    font-size: 18px;
+    font-size: 16px;
     margin: 0;
+}
+
+.event-name--inline {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .event-main {
@@ -576,31 +712,27 @@ async function refreshAll() {
     color: #fca5a5;
 }
 
-@media (max-width: 600px) {
-    .hero {
-        flex-direction: column;
-        align-items: flex-start;
-    }
+	@media (max-width: 600px) {
+	    .hero {
+	        flex-direction: column;
+	        align-items: flex-start;
+	    }
 
     .secondary {
         width: 100%;
     }
 
-    .event-card {
-        padding: 14px;
-    }
+	    .event-card {
+	        padding: 14px;
+	    }
 
-    .event-row {
-        flex-wrap: wrap;
-        gap: 12px;
-    }
+	    .event-row-line {
+	        flex-wrap: wrap;
+	        gap: 12px;
+	    }
 
-    .event-time-block {
-        flex: 0 0 auto;
-    }
-
-    .event-metrics {
-        justify-content: flex-start;
-    }
-}
+	    .event-metrics {
+	        justify-content: flex-start;
+	    }
+	}
 </style>

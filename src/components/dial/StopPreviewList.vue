@@ -1,4 +1,6 @@
 <script setup>
+import DialCardButton from './DialCardButton.vue'
+
 const props = defineProps({
     startSummary: {
         type: Object,
@@ -15,55 +17,55 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['open-start', 'open-end'])
-
-import { computePreviewIconStyle } from '../../utils/previewIcon'
-
-const iconStyle = (summary, autoActive) => computePreviewIconStyle(summary, autoActive)
 </script>
 
 <template>
     <ul class="stop-preview">
         <li>
-            <button type="button" class="state-card" @click="emit('open-start')">
-                <div class="state-icon" :class="{
-                    empty: !props.startSummary.hasColor && !props.startSummary.hasBrightness,
-                    'auto-active': props.autoBrightnessActive && props.startSummary.hasBrightness,
-                    'auto-color': props.autoBrightnessActive && props.startSummary.hasColor,
-                    'color-active': !props.autoBrightnessActive && props.startSummary.hasColor
-                }" :style="iconStyle(props.startSummary, props.autoBrightnessActive)"></div>
-                <div class="state-body">
-                    <p class="state-label">Старт</p>
-                    <p class="state-row">
-                        <template v-if="props.startSummary.values.length">
-                            <span v-for="value in props.startSummary.values" :key="value" class="state-value">{{ value
-                                }}</span>
-                        </template>
-                        <span v-else class="state-placeholder">{{ props.startSummary.placeholder }}</span>
-                    </p>
-                </div>
-                <span class="chevron">›</span>
-            </button>
+            <DialCardButton @click="emit('open-start')">
+                <p class="state-label">Старт</p>
+                <template #right>
+                    <div v-if="props.startSummary.hasColor || props.startSummary.hasBrightness" class="state-meta">
+                        <span v-if="props.startSummary.hasColor || (props.autoBrightnessActive && props.startSummary.hasBrightness)"
+                            class="color-swatch" :class="{ pulse: props.autoBrightnessActive && props.startSummary.hasBrightness }"
+                            :style="{
+                                background: props.startSummary.hasColor ? props.startSummary.colorHex : '#fff4dd',
+                                boxShadow: `0 0 0 2px rgba(0,0,0,0.25), 0 0 0 1px ${props.startSummary.hasColor ? props.startSummary.colorHex : '#fff4dd'}`
+                            }" aria-hidden="true" />
+                        <span v-if="props.startSummary.hasColor && props.startSummary.colorMode === 'temperature'"
+                            class="meta-value">
+                            {{ props.startSummary.temperature }}K
+                        </span>
+                        <span v-if="props.startSummary.hasBrightness" class="meta-value">
+                            {{ props.autoBrightnessActive ? 'Авто' : `${Math.round(props.startSummary.brightness)}%` }}
+                        </span>
+                    </div>
+                    <span v-else class="state-placeholder">{{ props.startSummary.placeholder }}</span>
+                </template>
+            </DialCardButton>
         </li>
         <li>
-            <button type="button" class="state-card" @click="emit('open-end')">
-                <div class="state-icon" :class="{
-                    empty: !props.endSummary.hasColor && !props.endSummary.hasBrightness,
-                    'auto-active': props.autoBrightnessActive && props.endSummary.hasBrightness,
-                    'auto-color': props.autoBrightnessActive && props.endSummary.hasColor,
-                    'color-active': !props.autoBrightnessActive && props.endSummary.hasColor
-                }" :style="iconStyle(props.endSummary, props.autoBrightnessActive)"></div>
-                <div class="state-body">
-                    <p class="state-label">Финиш</p>
-                    <p class="state-row">
-                        <template v-if="props.endSummary.values.length">
-                            <span v-for="value in props.endSummary.values" :key="value" class="state-value">{{ value
-                                }}</span>
-                        </template>
-                        <span v-else class="state-placeholder">{{ props.endSummary.placeholder }}</span>
-                    </p>
-                </div>
-                <span class="chevron">›</span>
-            </button>
+            <DialCardButton @click="emit('open-end')">
+                <p class="state-label">Финиш</p>
+                <template #right>
+                    <div v-if="props.endSummary.hasColor || props.endSummary.hasBrightness" class="state-meta">
+                        <span v-if="props.endSummary.hasColor || (props.autoBrightnessActive && props.endSummary.hasBrightness)"
+                            class="color-swatch" :class="{ pulse: props.autoBrightnessActive && props.endSummary.hasBrightness }"
+                            :style="{
+                                background: props.endSummary.hasColor ? props.endSummary.colorHex : '#fff4dd',
+                                boxShadow: `0 0 0 2px rgba(0,0,0,0.25), 0 0 0 1px ${props.endSummary.hasColor ? props.endSummary.colorHex : '#fff4dd'}`
+                            }" aria-hidden="true" />
+                        <span v-if="props.endSummary.hasColor && props.endSummary.colorMode === 'temperature'"
+                            class="meta-value">
+                            {{ props.endSummary.temperature }}K
+                        </span>
+                        <span v-if="props.endSummary.hasBrightness" class="meta-value">
+                            {{ props.autoBrightnessActive ? 'Авто' : `${Math.round(props.endSummary.brightness)}%` }}
+                        </span>
+                    </div>
+                    <span v-else class="state-placeholder">{{ props.endSummary.placeholder }}</span>
+                </template>
+            </DialCardButton>
         </li>
     </ul>
 </template>
@@ -78,126 +80,67 @@ const iconStyle = (summary, autoActive) => computePreviewIconStyle(summary, auto
     gap: 8px;
 }
 
-.state-card {
-    width: 100%;
-    border: none;
-    background: #0c1424;
-    border-radius: 18px;
-    padding: 12px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    color: inherit;
-}
-
-.state-icon {
-    width: 46px;
-    height: 46px;
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--state-icon-bg, rgba(255, 255, 255, 0.14));
-    box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.25);
-}
-
-.state-icon.empty {
-    background: transparent;
-    box-shadow: inset 0 0 0 2px rgba(148, 163, 184, 0.6);
-}
-
-.state-icon.auto-active {
-    animation: icon-auto-brightness 4.5s ease-in-out infinite;
-    background: var(--state-icon-bg, rgba(255, 255, 255, 1));
-    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 1), 0 0 8px rgba(79, 70, 229, 0.5);
-}
-
-.state-icon.auto-active.auto-color {
-    animation: icon-auto-color 4.5s ease-in-out infinite;
-    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 1), 0 0 8px rgba(79, 70, 229, 0.5);
-}
-
-@keyframes icon-auto-brightness {
-    0% {
-        opacity: 0.6;
-    }
-
-    50% {
-        opacity: 1;
-    }
-
-    100% {
-        opacity: 0.6;
-    }
-}
-
-@keyframes icon-auto-color {
-    0% {
-        opacity: 0.6;
-    }
-
-    50% {
-        opacity: 1;
-    }
-
-    100% {
-        opacity: 0.6;
-    }
-}
-
 .state-label {
     margin: 0;
     font-weight: 600;
-    color: #e5e7eb;
+    color: var(--text-primary);
     text-align: left;
     font-size: 15px;
 }
 
-.state-body {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.state-row {
-    margin: 0;
-    display: flex;
-    gap: 10px;
+.state-meta {
+    display: inline-flex;
     align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
 }
 
-.state-value {
-    color: #cbd5e1;
-    font-size: 14px;
+.color-swatch {
+    width: 18px;
+    height: 18px;
+    border-radius: 6px;
+    flex: 0 0 auto;
 }
 
-.state-placeholder {
-    color: #475569;
-    font-size: 14px;
+.color-swatch.hidden {
+    visibility: hidden;
 }
 
-.chevron {
-    margin-left: auto;
-    color: #475569;
-    font-weight: 400;
-    font-size: 30px;
-    line-height: 1;
+.color-swatch.pulse {
+    animation: swatch-pulse 4.5s ease-in-out infinite;
 }
 
-@keyframes preview-auto-pulse {
+@keyframes swatch-pulse {
     0% {
-        transform: translateY(0);
-        opacity: 1;
+        opacity: 0.6;
     }
 
     50% {
-        transform: translateY(-2px);
-        opacity: 0.85;
+        opacity: 1;
     }
 
     100% {
-        transform: translateY(0);
-        opacity: 1;
+        opacity: 0.6;
     }
 }
+
+.meta-value {
+    color: var(--text-subtle);
+    font-size: 14px;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.state-value {
+    color: var(--text-subtle);
+    font-size: 14px;
+    white-space: nowrap;
+}
+
+.state-placeholder {
+    color: var(--text-muted);
+    font-size: 14px;
+    white-space: nowrap;
+}
+
 </style>

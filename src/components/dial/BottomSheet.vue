@@ -1,0 +1,262 @@
+<script setup>
+import { computed, onUnmounted, ref, watch } from 'vue'
+
+const props = defineProps({
+  open: {
+    type: Boolean,
+    default: false
+  },
+  title: {
+    type: String,
+    default: ''
+  },
+  closeLabel: {
+    type: String,
+    default: 'Закрыть'
+  },
+  maxWidth: {
+    type: String,
+    default: '560px'
+  },
+  maxHeight: {
+    type: String,
+    default: '90vh'
+  },
+  zIndex: {
+    type: Number,
+    default: 40
+  }
+})
+
+const emit = defineEmits(['close'])
+
+const bodyOverflow = ref('')
+const scrollLocked = ref(false)
+const closing = ref(false)
+const translate = ref(0)
+const dragStartY = ref(null)
+const dragActive = ref(false)
+const dragElement = ref(null)
+
+watch(
+  () => props.open,
+  (open, prev) => {
+    if (open && !prev) {
+      bodyOverflow.value = document.body.style.overflow
+      document.body.style.overflow = 'hidden'
+      scrollLocked.value = true
+      closing.value = false
+      translate.value = 0
+      dragStartY.value = null
+      dragActive.value = false
+      dragElement.value = null
+      return
+    }
+    if (!open && prev) {
+      if (scrollLocked.value) {
+        document.body.style.overflow = bodyOverflow.value || ''
+        bodyOverflow.value = ''
+        scrollLocked.value = false
+      }
+      closing.value = false
+      translate.value = 0
+      dragStartY.value = null
+      dragActive.value = false
+      dragElement.value = null
+    }
+  }
+)
+
+onUnmounted(() => {
+  if (scrollLocked.value) {
+    document.body.style.overflow = bodyOverflow.value || ''
+    scrollLocked.value = false
+  }
+})
+
+function requestClose() {
+  if (closing.value) return
+  closing.value = true
+  translate.value = Math.max(translate.value, 200)
+  setTimeout(() => {
+    closing.value = false
+    translate.value = 0
+    dragStartY.value = null
+    dragActive.value = false
+    dragElement.value = null
+    emit('close')
+  }, 250)
+}
+
+function startDrag(event) {
+  if (event.pointerType === 'mouse') return
+  dragStartY.value = event.clientY
+  dragActive.value = true
+  dragElement.value = event.currentTarget
+  dragElement.value?.setPointerCapture?.(event.pointerId)
+}
+
+function handleDrag(event) {
+  if (!dragActive.value || dragStartY.value == null) return
+  if (event.pointerType === 'mouse') return
+  event.preventDefault()
+  const delta = event.clientY - dragStartY.value
+  translate.value = Math.max(0, delta)
+}
+
+function endDrag(event) {
+  if (!dragActive.value) return
+  dragElement.value?.releasePointerCapture?.(event.pointerId)
+  if (translate.value > 120) {
+    requestClose()
+  } else {
+    translate.value = 0
+  }
+  dragActive.value = false
+  dragStartY.value = null
+  dragElement.value = null
+}
+
+const panelStyle = computed(() => ({
+  zIndex: props.zIndex,
+  '--bottom-sheet-max-width': props.maxWidth,
+  '--bottom-sheet-max-height': props.maxHeight,
+  '--bottom-sheet-current-translate': `${Math.max(0, translate.value)}px`,
+  transform: `translateY(${Math.max(0, translate.value)}px)`
+}))
+</script>
+
+<template>
+  <Teleport to="body">
+    <div v-if="open" class="bottom-sheet-overlay" :style="{ zIndex }" @touchmove.passive>
+      <div class="bottom-sheet-backdrop" @click="requestClose" />
+      <div class="bottom-sheet-panel" :class="{ closing }" :style="panelStyle">
+        <header class="bottom-sheet-header" @pointerdown="startDrag" @pointermove="handleDrag" @pointerup="endDrag"
+          @pointercancel="endDrag">
+          <button type="button" class="bottom-sheet-close" :aria-label="closeLabel" @pointerdown.stop
+            @click="requestClose">
+            <svg viewBox="0 0 24 24" aria-hidden="true" class="bottom-sheet-close-icon">
+              <path
+                d="M18.3 5.71a1 1 0 0 0-1.41 0L12 10.59 7.11 5.7A1 1 0 0 0 5.7 7.11L10.59 12l-4.9 4.89a1 1 0 1 0 1.42 1.42L12 13.41l4.89 4.9a1 1 0 0 0 1.42-1.42L13.41 12l4.9-4.89a1 1 0 0 0 0-1.4Z" />
+            </svg>
+          </button>
+          <h3>
+            <slot name="title">{{ title }}</slot>
+          </h3>
+          <div class="bottom-sheet-header-spacer" aria-hidden="true" />
+        </header>
+        <div class="bottom-sheet-content">
+          <slot />
+        </div>
+      </div>
+    </div>
+  </Teleport>
+</template>
+
+<style scoped>
+.bottom-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+.bottom-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.bottom-sheet-panel {
+  position: relative;
+  width: min(var(--bottom-sheet-max-width), 100%);
+  max-height: var(--bottom-sheet-max-height);
+  background: #0d1322;
+  border-radius: 28px 28px 0 0;
+  padding-bottom: 32px;
+  animation: bottom-sheet-slide-in 0.3s ease-out forwards;
+  display: flex;
+  flex-direction: column;
+}
+
+.bottom-sheet-panel.closing {
+  animation: bottom-sheet-slide-out 0.25s ease-in forwards;
+}
+
+@keyframes bottom-sheet-slide-in {
+  from {
+    transform: translateY(100%);
+  }
+
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes bottom-sheet-slide-out {
+  from {
+    transform: translateY(var(--bottom-sheet-current-translate, 0px));
+  }
+
+  to {
+    transform: translateY(100%);
+  }
+}
+
+.bottom-sheet-header {
+  display: grid;
+  grid-template-columns: 44px 1fr 44px;
+  align-items: center;
+  padding: 12px 24px 16px 12px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.bottom-sheet-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  justify-self: center;
+  text-align: center;
+}
+
+.bottom-sheet-close {
+  width: 44px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: #f8fafc;
+  font-size: 16px;
+  cursor: pointer;
+  border-radius: 12px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bottom-sheet-close:active {
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.bottom-sheet-close-icon {
+  width: 22px;
+  height: 22px;
+  fill: currentColor;
+}
+
+.bottom-sheet-header-spacer {
+  width: 44px;
+  height: 32px;
+}
+
+.bottom-sheet-content {
+  padding: 0 24px 24px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  flex: 1;
+}
+</style>

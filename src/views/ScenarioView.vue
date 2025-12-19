@@ -11,9 +11,11 @@ import {
 } from '../utils/deviceCapabilities'
 import { lockColorUsage, lockColorMode, lockBrightnessUsage } from '../utils/stopStateRules'
 import ScenarioDialCircle from '../components/dial/ScenarioDialCircle.vue'
+import BottomSheet from '../components/dial/BottomSheet.vue'
 import TargetDevicesCard from '../components/dial/TargetDevicesCard.vue'
 import StopPreviewList from '../components/dial/StopPreviewList.vue'
-import PresenceFooter from '../components/dial/PresenceFooter.vue'
+import RunScheduleCard from '../components/dial/RunScheduleCard.vue'
+import ScenarioActionsFooter from '../components/dial/ScenarioActionsFooter.vue'
 import DeviceSelectorSheet from '../components/dial/DeviceSelectorSheet.vue'
 import StopStateSheet from '../components/dial/StopStateSheet.vue'
 import SegmentedControl from '../components/dial/SegmentedControl.vue'
@@ -80,7 +82,7 @@ const scenarioNameValue = computed({
         return scenario.name || ''
     },
     set(value) {
-        scenario.name = value
+        scenario.name = String(value ?? '').slice(0, 30)
     }
 })
 
@@ -126,6 +128,24 @@ const selectedDays = computed(() => {
     if (Array.isArray(days) && days.length) return days
     return [1, 2, 3, 4, 5, 6, 7]
 })
+
+const scheduleDaysSummary = computed(() => {
+    const days = selectedDays.value
+    if (Array.isArray(days) && days.length === 7) return 'Каждый день'
+    const labelByValue = new Map(weekdayOptions.map((item) => [item.value, item.label]))
+    const labels = (days || [])
+        .slice()
+        .sort((a, b) => a - b)
+        .map((value) => labelByValue.get(value))
+        .filter(Boolean)
+    return labels.length ? labels.join(', ') : 'Каждый день'
+})
+
+const schedulePresenceSummary = computed(() => {
+    return presenceOptions.find((option) => option.id === presenceMode.value)?.label || 'Всегда'
+})
+
+const scheduleSummary = computed(() => `${scheduleDaysSummary.value} · ${schedulePresenceSummary.value}`)
 
 function toggleDay(value) {
     const current = new Set(selectedDays.value)
@@ -551,21 +571,17 @@ function summarizeStopState(stop) {
         colorHex = baseColor
     }
     const values = []
-    if (hasColor) {
-        if (stop.colorMode === 'temperature') values.push(`${stop.temperature}K`)
-        else values.push('Цвет')
-    }
-    if (stop.useBrightness) {
-        if (autoBrightness.enabled) values.push('Автояркость')
-        else values.push(`${Math.round(stop.brightness)}%`)
-    }
+    if (hasColor && stop.colorMode === 'temperature') values.push(`${stop.temperature}K`)
+    if (stop.useBrightness) values.push(autoBrightness.enabled ? 'Автояркость' : `${Math.round(stop.brightness)}%`)
     return {
         colorHex,
         values,
         hasColor,
         hasBrightness: !!stop.useBrightness,
         brightness: Number.isFinite(stop.brightness) ? stop.brightness : 0,
-        placeholder: values.length ? '' : 'Не меняем'
+        temperature: Number.isFinite(stop.temperature) ? stop.temperature : 0,
+        colorMode: stop.colorMode === 'rgb' ? 'rgb' : 'temperature',
+        placeholder: hasColor || stop.useBrightness ? '' : 'Не меняем'
     }
 }
 
@@ -1107,69 +1123,6 @@ function closeModal() {
     modalPayload.value = null
 }
 
-const bodyOverflow = ref('')
-const sheetClosing = ref(false)
-const sheetTranslate = ref(0)
-const sheetDragStartY = ref(null)
-const sheetDragActive = ref(false)
-const sheetDragElement = ref(null)
-
-watch(activeModal, (value, prev) => {
-    if (value && !prev) {
-        bodyOverflow.value = document.body.style.overflow
-        document.body.style.overflow = 'hidden'
-    } else if (!value && prev) {
-        document.body.style.overflow = bodyOverflow.value || ''
-        sheetTranslate.value = 0
-        sheetClosing.value = false
-    }
-})
-
-function closeSheetWithAnimation() {
-    sheetClosing.value = true
-    sheetTranslate.value = 200
-    setTimeout(() => {
-        closeModal()
-        sheetTranslate.value = 0
-        sheetClosing.value = false
-    }, 250)
-}
-
-function startSheetDrag(event) {
-    if (event.pointerType === 'mouse') return
-    event.preventDefault()
-    sheetDragStartY.value = event.clientY
-    sheetDragActive.value = true
-    sheetDragElement.value = event.currentTarget
-    sheetDragElement.value?.setPointerCapture?.(event.pointerId)
-}
-
-function handleSheetDrag(event) {
-    if (!sheetDragActive.value || sheetDragStartY.value == null) return
-    if (event.pointerType === 'mouse') return
-    event.preventDefault()
-    const delta = event.clientY - sheetDragStartY.value
-    sheetTranslate.value = Math.max(0, delta)
-}
-
-function endSheetDrag(event) {
-    if (!sheetDragActive.value) return
-    sheetDragElement.value?.releasePointerCapture?.(event.pointerId)
-    if (sheetTranslate.value > 120) {
-        closeSheetWithAnimation()
-    } else {
-        sheetTranslate.value = 0
-    }
-    sheetDragActive.value = false
-    sheetDragStartY.value = null
-    sheetDragElement.value = null
-}
-
-const sheetTransform = computed(() => {
-    const translate = Math.max(sheetTranslate.value, 0)
-    return `translateY(${translate}px)`
-})
-
 const currentStopForModal = computed(() => {
     if (modalPayload.value === 'start') return startStop
     if (modalPayload.value === 'end') return endStop
@@ -1271,7 +1224,7 @@ async function handleDelete() {
     <main class="scenario-dial-page">
         <div class="title-row">
             <div class="scenario-name-wrap">
-                <input v-if="editingName" ref="nameInputRef" v-model="scenarioNameValue" maxlength="40"
+                <input v-if="editingName" ref="nameInputRef" v-model="scenarioNameValue" maxlength="30"
                     class="scenario-name-input" type="text" placeholder="Название сценария" @blur="finishEditingName"
                     @keyup.enter="finishEditingName" />
                 <button v-else :class="['scenario-name-display', { placeholder: !scenarioNameValue }]" type="button"
@@ -1279,23 +1232,20 @@ async function handleDelete() {
                     {{ scenarioNameDisplay }}
                 </button>
             </div>
-            <div class="status-panel">
-                <div class="status-text" :style="{ color: scenarioStatusColor }">
-                    <strong>{{ scenarioStatusText }}</strong>
-                </div>
-                <div class="status-actions">
-                    <button type="button" class="status-icon-btn"
-                        :title="scenarioDisplayStatus === 'paused' ? 'Возобновить' : 'Пауза'"
-                        @click="toggleScenarioPause" :disabled="scenarioDisplayStatus === 'off'">
-                        <span v-if="scenarioDisplayStatus === 'paused'">▶</span>
-                        <span v-else>⏸</span>
-                    </button>
-                    <button type="button" class="status-icon-btn power"
-                        :title="scenarioDisplayStatus === 'off' ? 'Включить' : 'Выключить'"
-                        @click="toggleScenarioPower">
-                        <span>{{ scenarioDisplayStatus === 'off' ? '⏻' : '⏼' }}</span>
-                    </button>
-                </div>
+            <div class="status-text" :style="{ color: scenarioStatusColor }">
+                <span>{{ scenarioStatusText }}</span>
+            </div>
+            <div class="status-actions">
+                <button type="button" class="status-icon-btn"
+                    :title="scenarioDisplayStatus === 'paused' ? 'Возобновить' : 'Пауза'" @click="toggleScenarioPause"
+                    :disabled="scenarioDisplayStatus === 'off'">
+                    <span v-if="scenarioDisplayStatus === 'paused'">▶</span>
+                    <span v-else>⏸</span>
+                </button>
+                <button type="button" class="status-icon-btn power"
+                    :title="scenarioDisplayStatus === 'off' ? 'Включить' : 'Выключить'" @click="toggleScenarioPower">
+                    <span>{{ scenarioDisplayStatus === 'off' ? '⏻' : '⏼' }}</span>
+                </button>
             </div>
         </div>
 
@@ -1310,23 +1260,6 @@ async function handleDelete() {
                         @update:end-stop="handleEndStopUpdate" @change="handleDialChange"
                         @open-start-editor="openModal('state', 'start')" @open-end-editor="openModal('state', 'end')"
                         @resume="scenarioStatus = 'running'" />
-                    <div class="weekday-picker">
-                        <p>Дни запуска</p>
-                        <div class="weekday-grid">
-                            <button v-for="day in weekdayOptions" :key="day.value" type="button" class="weekday-btn"
-                                :class="{ active: selectedDays.includes(day.value) }" @click="toggleDay(day.value)">
-                                {{ day.label }}
-                            </button>
-                        </div>
-                    </div>
-                    <div class="presence-inline-controls">
-                        <div class="presence-inline-header">
-                            <span>Когда запускать</span>
-                        </div>
-                        <SegmentedControl aria-label="Режим присутствия" dense :model-value="presenceMode"
-                            :options="presenceOptions.map((option) => ({ value: option.id, label: option.label }))"
-                            @update:model-value="presenceMode = $event" />
-                    </div>
                 </div>
             </div>
             <div class="settings-column">
@@ -1337,16 +1270,16 @@ async function handleDelete() {
 
                     <TargetDevicesCard :loading="catalogLoading" :error="catalogError" :summary="selectedTargetsLabel"
                         @open="openModal('devices')" />
-                </section>
 
-                <PresenceFooter :options="presenceOptions" :value="presenceMode" :show-toggle="false"
-                    @update:value="presenceMode = $event"
-                    @save="handleSave" @delete="handleDelete" />
+                    <RunScheduleCard :summary="scheduleSummary" @open="openModal('schedule')" />
+                </section>
 
                 <div class="scenario-feedback">
                     <p v-if="scenarioMessage" class="status-info success">{{ scenarioMessage }}</p>
                     <p v-if="scenarioError" class="status-info error">{{ scenarioError }}</p>
                 </div>
+
+                <ScenarioActionsFooter class="scenario-actions-footer" @save="handleSave" @delete="handleDelete" />
             </div>
         </div>
 
@@ -1354,29 +1287,37 @@ async function handleDelete() {
             :palette="colorPalette" :time="scenario.time" :context="modalPayload === 'start' ? 'start' : 'end'"
             :auto-brightness="autoBrightness" :sensor-options="sensorOptions" @close="closeModal" />
 
-        <Teleport to="body">
-            <div v-if="activeModal === 'devices'" class="sheet-overlay" @touchmove.passive>
-                <div class="sheet-backdrop" @click="closeSheetWithAnimation" />
-                <div class="sheet-panel" :class="{ closing: sheetClosing }" :style="{ transform: sheetTransform }">
-                    <header class="sheet-header" @pointerdown="startSheetDrag" @pointermove="handleSheetDrag"
-                        @pointerup="endSheetDrag" @pointercancel="endSheetDrag">
-                        <button type="button" class="sheet-close" @click="closeSheetWithAnimation">Закрыть</button>
-                        <h3>Выбор устройств</h3>
-                    </header>
-                    <div class="sheet-content">
-                        <DeviceSelectorSheet :sections="deviceSections" :selected-ids="selectedDevicesIds"
-                            :selected-groups="selectedGroupIds" @toggle-group="handleGroupToggle"
-                            @toggle-device="handleDeviceToggle" />
-                    </div>
+        <BottomSheet :open="activeModal === 'devices'" title="Выбор устройств" @close="closeModal">
+            <DeviceSelectorSheet :sections="deviceSections" :selected-ids="selectedDevicesIds"
+                :selected-groups="selectedGroupIds" @toggle-group="handleGroupToggle"
+                @toggle-device="handleDeviceToggle" />
+        </BottomSheet>
+
+        <BottomSheet :open="activeModal === 'schedule'" title="Запускать" @close="closeModal">
+            <div class="weekday-picker">
+                <p>Дни запуска</p>
+                <div class="weekday-grid">
+                    <button v-for="day in weekdayOptions" :key="day.value" type="button" class="weekday-btn"
+                        :class="{ active: selectedDays.includes(day.value) }" @click="toggleDay(day.value)">
+                        {{ day.label }}
+                    </button>
                 </div>
             </div>
-        </Teleport>
+            <div class="presence-inline-controls">
+                <div class="presence-inline-header">
+                    <span>Когда запускать</span>
+                </div>
+                <SegmentedControl aria-label="Режим присутствия" dense :model-value="presenceMode"
+                    :options="presenceOptions.map((option) => ({ value: option.id, label: option.label }))"
+                    @update:model-value="presenceMode = $event" />
+            </div>
+        </BottomSheet>
     </main>
 </template>
 
 <style scoped>
 .scenario-dial-page {
-    padding: 24px 16px 40px;
+    padding: 24px 24px 40px;
     display: flex;
     flex-direction: column;
     gap: 18px;
@@ -1394,14 +1335,50 @@ async function handleDelete() {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    justify-content: space-between;
     gap: 12px;
 }
 
 .scenario-name-wrap {
-    flex: 0 1 40ch;
+    flex: 0 1 30ch;
     min-width: 220px;
-    max-width: 40ch;
+    max-width: 30ch;
+}
+
+@media (max-width: 600px) {
+    .title-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        grid-template-areas:
+            'name actions'
+            'status actions';
+        align-items: start;
+        column-gap: 12px;
+        row-gap: 6px;
+    }
+
+    .scenario-name-wrap {
+        grid-area: name;
+        min-width: 0;
+        max-width: none;
+    }
+
+    .status-text {
+        grid-area: status;
+    }
+
+    .status-actions {
+        grid-area: actions;
+        align-self: center;
+        justify-self: center;
+    }
+
+    .status-text strong {
+        font-size: 13px;
+    }
+
+    .status-text {
+        margin-left: 0;
+    }
 }
 
 .scenario-name-input {
@@ -1411,7 +1388,7 @@ async function handleDelete() {
     color: var(--text-primary);
     border: 1px solid rgba(148, 163, 184, 0.5);
     padding: 10px 14px;
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 600;
 }
 
@@ -1423,7 +1400,7 @@ async function handleDelete() {
     margin: 0;
     text-align: left;
     cursor: text;
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 600;
     color: #f8fafc;
 }
@@ -1432,20 +1409,20 @@ async function handleDelete() {
     color: rgba(248, 250, 252, 0.5);
 }
 
-.status-panel {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    flex-wrap: wrap;
-}
-
-.status-text strong {
-    font-size: 16px;
+.status-text {
+    font-size: 14px;
+    line-height: 1.15;
 }
 
 .status-actions {
     display: flex;
     gap: 8px;
+}
+
+@media (min-width: 600px) {
+    .status-text {
+        margin-left: auto;
+    }
 }
 
 .status-icon-btn {
@@ -1491,6 +1468,15 @@ async function handleDelete() {
     flex-direction: column;
     gap: 20px;
     box-shadow: 0 20px 40px rgba(2, 9, 25, 0.35);
+}
+
+@media (max-width: 499px) {
+    .dial-card {
+        background: transparent;
+        border: none;
+        box-shadow: none;
+        padding: 8px;
+    }
 }
 
 .presence-inline-controls {
@@ -1567,28 +1553,29 @@ async function handleDelete() {
     color: var(--primary);
 }
 
-@media (min-width: 500px) {
+@media (min-width: 570px) {
     .dial-layout {
         flex-direction: row;
-        align-items: flex-start;
-        gap: 32px;
+        align-items: stretch;
+        gap: 16px;
     }
 
     .dial-column {
-        flex: 1 1 auto;
-        max-width: 500px;
-        min-width: 0;
+        flex: 0 1 500px;
+        min-width: 250px;
+        max-width: 400px;
     }
 
     .settings-column {
-        flex: 0 1 360px;
-        min-width: 360px;
+        flex: 1 1 auto;
+        min-width: 250px;
+    }
+
+    .scenario-actions-footer {
+        margin-top: auto;
     }
 }
 
-.scenario-feedback {
-    min-height: 1.4em;
-}
 
 .status-info {
     margin: 4px 0 0;
@@ -1601,93 +1588,5 @@ async function handleDelete() {
 
 .status-info.error {
     color: #f87171;
-}
-
-.sheet-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 50;
-    display: flex;
-    align-items: flex-end;
-    justify-content: center;
-}
-
-.sheet-backdrop {
-    position: absolute;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.5);
-}
-
-.sheet-panel {
-    position: relative;
-    width: min(520px, 100%);
-    max-height: 80vh;
-    background: var(--surface-card);
-    border-top-left-radius: 16px;
-    border-top-right-radius: 16px;
-    padding-bottom: 18px;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    color: var(--text-primary);
-    transform: translateY(100%);
-    animation: sheet-slide-in 0.3s ease-out forwards;
-    touch-action: pan-y;
-}
-
-.sheet-panel.closing {
-    animation: sheet-slide-out 0.25s ease-in forwards;
-}
-
-@keyframes sheet-slide-in {
-    from {
-        transform: translateY(100%);
-    }
-
-    to {
-        transform: translateY(0);
-    }
-}
-
-@keyframes sheet-slide-out {
-    from {
-        transform: translateY(var(--sheet-current-translate, 0));
-    }
-
-    to {
-        transform: translateY(100%);
-    }
-}
-
-.sheet-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--surface-border);
-    touch-action: none;
-    cursor: grab;
-}
-
-.sheet-header h3 {
-    margin: 0;
-    color: #f1f5f9;
-    font-weight: 600;
-}
-
-.sheet-close {
-    border: none;
-    background: transparent;
-    color: var(--primary);
-    font-weight: 600;
-}
-
-.sheet-content {
-    padding: 12px 16px 26px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    overflow-y: auto;
-    max-height: calc(80vh - 70px);
 }
 </style>

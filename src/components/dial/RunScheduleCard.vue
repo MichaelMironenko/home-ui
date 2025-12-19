@@ -2,8 +2,6 @@
 import DialCardButton from './DialCardButton.vue'
 
 defineProps({
-  loading: Boolean,
-  error: String,
   summary: {
     type: String,
     default: ''
@@ -16,10 +14,8 @@ const emit = defineEmits(['open'])
 <template>
   <DialCardButton @click="emit('open')">
     <div>
-      <p class="card-title">Устройства</p>
-      <p class="card-subtitle" v-if="loading">Загружаем каталог…</p>
-      <p class="card-subtitle error" v-else-if="error">{{ error }}</p>
-      <p class="card-subtitle" v-else>{{ summary }}</p>
+      <p class="card-title">Запускать</p>
+      <p class="card-subtitle">{{ summary }}</p>
     </div>
   </DialCardButton>
 </template>
@@ -36,8 +32,5 @@ const emit = defineEmits(['open'])
   color: var(--text-muted);
   font-size: 14px;
   font-weight: 500;
-}
-.card-subtitle.error {
-  color: #f87171;
 }
 </style>

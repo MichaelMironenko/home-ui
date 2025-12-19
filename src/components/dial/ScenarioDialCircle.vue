@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, reactive, ref, toRaw, watch } from 'vue'
-import { blendHex, stopColorHex } from '../../utils/colorUtils'
+import { stopColorHex } from '../../utils/colorUtils'
 
 const props = defineProps({
     startStop: {
@@ -59,7 +59,7 @@ const FACE_CENTER = 100
 const SCENARIO_SEGMENT_INSET = 4
 const DEFAULT_SEGMENT_OUTER_RADIUS = FACE_CENTER - SCENARIO_SEGMENT_INSET
 const FACE_RADIUS = DEFAULT_SEGMENT_OUTER_RADIUS
-const DIAL_FACE_MIN_GAP_PX = 44
+const DIAL_FACE_MIN_GAP_PX = 36
 const DIAL_FACE_GAP_FRACTION = 0.25
 const ARC_PADDING_PX = 5
 const TICK_EDGE_RATIO = 20
@@ -120,9 +120,7 @@ const stopEmitState = {
     end: { dirty: false, lastEmit: 0 }
 }
 
-const draggingPrimaryHandle = computed(
-    () => draggingHandle.value === 'start' || draggingHandle.value === 'end'
-)
+const gradientId = `scenario-arc-gradient-${Math.random().toString(36).slice(2, 9)}`
 
 const dialScale = computed(() => {
     const size = dialMetrics.size || BASE_DIAL_SIZE
@@ -133,35 +131,29 @@ const mainHandleSize = computed(() => 40 * dialScale.value)
 
 const ratioToInsetPercent = (ratio) => `${(((1 - ratio) / 2) * 100).toFixed(4)}%`
 
-const unitsPerPx = computed(() => {
-    const radiusPx = dialMetrics.radius || BASE_DIAL_SIZE / 2
-    return FACE_CENTER / Math.max(1, radiusPx)
-})
+const TICK_OUTER_RADIUS_NORM = FACE_CENTER - FACE_CENTER / TICK_EDGE_RATIO
+const NUMBER_RADIUS_NORM = FACE_CENTER - FACE_CENTER / NUMBER_RADIUS_RATIO
 
-const dialRadiusUnits = computed(() => FACE_CENTER)
-const dialFaceRadiusUnits = computed(() => {
+const geom = computed(() => {
     const dialRadiusPx = dialMetrics.radius || BASE_DIAL_SIZE / 2
+    const unitsPerPx = FACE_CENTER / Math.max(1, dialRadiusPx)
     const gapPx = Math.max(DIAL_FACE_MIN_GAP_PX, dialRadiusPx * DIAL_FACE_GAP_FRACTION)
-    const faceRadius = dialRadiusUnits.value - gapPx * unitsPerPx.value
-    return Math.max(40, Math.min(FACE_RADIUS, faceRadius))
-})
-
-const tickOuterRadiusUnits = computed(() => dialFaceRadiusUnits.value - dialFaceRadiusUnits.value / TICK_EDGE_RATIO)
-const sunTimeRadiusUnits = computed(() => dialFaceRadiusUnits.value - dialFaceRadiusUnits.value / SUN_TIME_EDGE_RATIO)
-
-const tickOuterRadiusNorm = computed(() => FACE_CENTER - FACE_CENTER / TICK_EDGE_RATIO)
-const numberRadiusNorm = computed(() => FACE_CENTER - FACE_CENTER / NUMBER_RADIUS_RATIO)
-
-const arcPaddingUnits = computed(() => ARC_PADDING_PX * unitsPerPx.value)
-const arcOuterEdgeUnits = computed(() => dialRadiusUnits.value - arcPaddingUnits.value)
-const arcInnerEdgeUnits = computed(() => dialFaceRadiusUnits.value + arcPaddingUnits.value)
-const scheduleRadius = computed(() => (arcOuterEdgeUnits.value + arcInnerEdgeUnits.value) / 2)
-const scheduleStrokeWidth = computed(() => Math.max(6, arcOuterEdgeUnits.value - arcInnerEdgeUnits.value))
-
-const dialFaceInsetRatio = computed(() => Math.max(0.2, Math.min(0.95, dialFaceRadiusUnits.value / FACE_CENTER)))
-const scheduleBlurPx = computed(() => {
-    const strokePx = scheduleStrokeWidth.value / unitsPerPx.value
-    return Math.max(6, strokePx * 0.35)
+    const dialFaceRadiusUnits = Math.max(40, Math.min(FACE_RADIUS, FACE_CENTER - gapPx * unitsPerPx))
+    const arcPaddingUnits = ARC_PADDING_PX * unitsPerPx
+    const arcOuterEdgeUnits = FACE_CENTER - arcPaddingUnits
+    const arcInnerEdgeUnits = dialFaceRadiusUnits + arcPaddingUnits
+    const scheduleRadius = (arcOuterEdgeUnits + arcInnerEdgeUnits) / 2
+    const scheduleStrokeWidth = Math.max(6, arcOuterEdgeUnits - arcInnerEdgeUnits)
+    const dialFaceInsetRatio = Math.max(0.2, Math.min(0.95, dialFaceRadiusUnits / FACE_CENTER))
+    const scheduleBlurPx = Math.max(6, (scheduleStrokeWidth / unitsPerPx) * 0.35)
+    const sunTimeRadiusUnits = dialFaceRadiusUnits - dialFaceRadiusUnits / SUN_TIME_EDGE_RATIO
+    return {
+        dialFaceInsetRatio,
+        scheduleRadius,
+        scheduleStrokeWidth,
+        scheduleBlurPx,
+        sunTimeRadiusUnits
+    }
 })
 
 const startMinutes = computed(() => stopMinutes(localStartStop))
@@ -202,14 +194,6 @@ function scheduleReadDialMetrics() {
     })
 }
 
-function handleWindowResize() {
-    scheduleReadDialMetrics()
-}
-
-function handleWindowScroll() {
-    scheduleReadDialMetrics()
-}
-
 onMounted(() => {
     readDialMetrics()
     if (typeof ResizeObserver !== 'undefined') {
@@ -219,8 +203,8 @@ onMounted(() => {
         }
     }
     if (typeof window !== 'undefined') {
-        window.addEventListener('resize', handleWindowResize)
-        window.addEventListener('scroll', handleWindowScroll, { passive: true })
+        window.addEventListener('resize', scheduleReadDialMetrics)
+        window.addEventListener('scroll', scheduleReadDialMetrics, { passive: true })
     }
 })
 
@@ -231,8 +215,8 @@ onUnmounted(() => {
     }
     resizeObserver.value?.disconnect()
     if (typeof window !== 'undefined') {
-        window.removeEventListener('resize', handleWindowResize)
-        window.removeEventListener('scroll', handleWindowScroll)
+        window.removeEventListener('resize', scheduleReadDialMetrics)
+        window.removeEventListener('scroll', scheduleReadDialMetrics)
     }
 })
 
@@ -249,111 +233,87 @@ watch(
     }
 )
 
-const scenarioSegments = computed(() => {
-    const start = startMinutes.value
-    const end = endMinutes.value
-    if (!Number.isFinite(start) || !Number.isFinite(end)) return []
-    const span = clampScenarioSpan(clockwiseDuration(start, end))
-    const segments = []
-    const startColor = gradientStartColor.value
-    const endColor = gradientEndColor.value
-    const autoOnlyBrightness =
-        props.autoBrightness && !localStartStop?.useColor && !localEndStop?.useColor
-    const pulseSegments = props.autoBrightness && (localStartStop?.useColor || localEndStop?.useColor)
-    if (autoOnlyBrightness) {
-        segments.push({
-            key: 'auto-single',
-            startMinute: start,
-            spanMinutes: span,
-            color: AUTO_BRIGHTNESS_WARM_HEX,
-            pulse: true,
-            single: true
-        })
-    } else {
-        const coarseSegments = Math.max(1, Math.floor(span / 5))
-        const segmentCount = Math.min(20, Math.max(1, coarseSegments))
-        const segmentLength = span / segmentCount
-        const effectiveCount = segmentCount || 1
-        for (let index = 0; index < effectiveCount; index++) {
-            const segStart = start + segmentLength * index
-            const spanMinutes =
-                index === effectiveCount - 1 ? span - segmentLength * (effectiveCount - 1) : segmentLength
-            const ratio = effectiveCount === 1 ? 0 : index / (effectiveCount - 1)
-            segments.push({
-                key: `segment-${index}`,
-                startMinute: normalizeMinutes(segStart),
-                spanMinutes,
-                color: blendHex(startColor, endColor, ratio),
-                pulse: pulseSegments,
-                single: false
-            })
-        }
-    }
-    return segments
-        .filter((segment) => Number(segment?.spanMinutes) > 0)
-        .map((segment) => ({
-            ...segment,
-            startMinute: normalizeMinutes(segment.startMinute),
-            spanMinutes: Number(segment.spanMinutes)
-        }))
-})
+const autoOnlyBrightnessArc = computed(
+    () => props.autoBrightness && !localStartStop?.useColor && !localEndStop?.useColor
+)
+const arcPulse = computed(
+    () => props.autoBrightness && (autoOnlyBrightnessArc.value || localStartStop?.useColor || localEndStop?.useColor)
+)
+const scenarioSpanMinutes = computed(() =>
+    clampScenarioSpan(clockwiseDuration(startMinutes.value, endMinutes.value))
+)
 
 function clampScenarioSpan(spanMinutes) {
     const span = Number(spanMinutes) || 0
     if (span <= 0) return MIN_SCENARIO_SPAN_MINUTES
-    if (span >= MINUTES_PER_DAY) return MINUTES_PER_DAY
     return Math.max(MIN_SCENARIO_SPAN_MINUTES, span)
 }
 
-const scenarioRingArcs = computed(() => {
-    const radius = scheduleRadius.value
-    const strokeWidth = scheduleStrokeWidth.value
-    if (!Number.isFinite(radius) || radius <= 0 || !Number.isFinite(strokeWidth) || strokeWidth <= 0) return []
-    const arcs = []
-    scenarioSegments.value.forEach((segment) => {
-        const sweep = Math.min(
-            Math.max(0.5, (Number(segment.spanMinutes) / MINUTES_PER_DAY) * FULL_CIRCLE_DEG),
-            FULL_CIRCLE_DEG - 0.001
-        )
-        const startAngle = minuteToAngle(segment.startMinute || 0)
-        const pieces = splitArcIntoPieces(startAngle, sweep)
-        pieces.forEach((piece, index) => {
-            arcs.push({
-                key: `${segment.key}-arc-${index}`,
-                path: describeArcPath(radius, piece.start, piece.end),
-                color: segment.color,
-                pulse: segment.pulse,
-                single: segment.single,
-                width: strokeWidth
-            })
-        })
-    })
-    return arcs
+const scenarioArc = computed(() => {
+    const radius = geom.value.scheduleRadius
+    const strokeWidth = geom.value.scheduleStrokeWidth
+    const spanMinutes = scenarioSpanMinutes.value
+    if (!Number.isFinite(radius) || radius <= 0 || !Number.isFinite(strokeWidth) || strokeWidth <= 0) return null
+    const sweep = Math.min(
+        Math.max(0.5, (Number(spanMinutes) / MINUTES_PER_DAY) * FULL_CIRCLE_DEG),
+        FULL_CIRCLE_DEG - 0.001
+    )
+    const stroke = autoOnlyBrightnessArc.value ? AUTO_BRIGHTNESS_WARM_HEX : `url(#${gradientId})`
+    const startAngle = minuteToAngle(startMinutes.value)
+    if (sweep >= FULL_CIRCLE_DEG - 0.01) {
+        return { kind: 'circle', radius, width: strokeWidth, stroke, pulse: arcPulse.value }
+    }
+    const pieces = splitArcIntoPieces(startAngle, sweep)
+    return {
+        kind: 'path',
+        path: describeArcPathFromPieces(radius, pieces),
+        width: strokeWidth,
+        stroke,
+        pulse: arcPulse.value
+    }
+})
+
+const scenarioArcGradientVector = computed(() => {
+    if (autoOnlyBrightnessArc.value) return null
+    const arc = scenarioArc.value
+    if (!arc) return null
+    const radius = arc.radius ?? geom.value.scheduleRadius
+    const startPoint = angleToPoint(minuteToAngle(startMinutes.value), radius)
+    const endPoint = angleToPoint(minuteToAngle(endMinutes.value), radius)
+    const dx = (endPoint.x ?? 0) - (startPoint.x ?? 0)
+    const dy = (endPoint.y ?? 0) - (startPoint.y ?? 0)
+    if (Math.hypot(dx, dy) < 0.001) {
+        return { x1: 0, y1: 0, x2: 200, y2: 200 }
+    }
+    return { x1: startPoint.x, y1: startPoint.y, x2: endPoint.x, y2: endPoint.y }
 })
 
 const scenarioBoundaryMarks = computed(() => {
-    const radius = scheduleRadius.value
-    const width = scheduleStrokeWidth.value
+    const radius = geom.value.scheduleRadius
+    const width = geom.value.scheduleStrokeWidth
     if (!Number.isFinite(radius) || !Number.isFinite(width) || width <= 0) return null
+    const span = clockwiseDuration(startMinutes.value, endMinutes.value)
+    if (span >= MINUTES_PER_DAY - minuteStep) return null
     const startAngle = minuteToAngle(startMinutes.value)
     const endAngle = minuteToAngle(endMinutes.value)
     const markHalf = width / 6
     const inner = Math.max(0, radius - markHalf)
     const outer = radius + markHalf
+    const autoColor = autoOnlyBrightnessArc.value ? AUTO_BRIGHTNESS_WARM_HEX : null
     return {
         start: {
             angle: startAngle,
             cap: angleToPoint(startAngle, radius),
             inner: angleToPoint(startAngle, inner),
             outer: angleToPoint(startAngle, outer),
-            color: gradientStartColor.value
+            color: autoColor ?? gradientStartColor.value
         },
         end: {
             angle: endAngle,
             cap: angleToPoint(endAngle, radius),
             inner: angleToPoint(endAngle, inner),
             outer: angleToPoint(endAngle, outer),
-            color: gradientEndColor.value
+            color: autoColor ?? gradientEndColor.value
         },
         capRadius: width / 2
     }
@@ -367,15 +327,15 @@ function semicircleCapPath(radius) {
 
 const dialStyleVars = computed(() => {
     return {
-        '--dial-face-inset': ratioToInsetPercent(dialFaceInsetRatio.value),
-        '--schedule-blur': `${scheduleBlurPx.value}px`
+        '--dial-face-inset': ratioToInsetPercent(geom.value.dialFaceInsetRatio),
+        '--schedule-blur': `${geom.value.scheduleBlurPx}px`
     }
 })
 
 const currentNeedle = computed(() => {
     if (!Number.isFinite(props.currentMinute)) return null
     const angle = minuteToAngle(props.currentMinute)
-    const needleOuter = sunTimeRadiusUnits.value
+    const needleOuter = geom.value.sunTimeRadiusUnits
     const needleInner = Math.max(needleOuter - 3, 40)
     return {
         start: angleToPoint(angle, needleInner),
@@ -395,7 +355,7 @@ function isMinuteInDay(minute) {
 const hourLabels = computed(() => Array.from({ length: 12 }, (_, i) => i * 2))
 const innerTickMarks = computed(() => {
     const tickCount = 96
-    const outer = tickOuterRadiusNorm.value
+    const outer = TICK_OUTER_RADIUS_NORM
     const majorInner = outer - 8
     const hourInner = outer - 7
     const minorInner = outer - 4
@@ -423,7 +383,7 @@ const innerTickMarks = computed(() => {
 })
 
 const innerHourNumberItems = computed(() => {
-    const radius = numberRadiusNorm.value
+    const radius = NUMBER_RADIUS_NORM
     return hourLabels.value.map((hour) => {
         const minute = hour * 60
         const angle = minuteToAngle(minute)
@@ -443,13 +403,13 @@ const innerHourNumberItems = computed(() => {
 const handleOrbitRadius = computed(() => {
     const dialRadius = dialMetrics.radius
     if (!Number.isFinite(dialRadius) || dialRadius <= 0) return 0
-    return (scheduleRadius.value / FACE_CENTER) * dialRadius
+    return (geom.value.scheduleRadius / FACE_CENTER) * dialRadius
 })
 const startHandleStyle = computed(() =>
-    buildHandleStyle(positionForMinute(startMinutes.value, handleOrbitRadius.value, 0), 'start')
+    buildHandleStyle(positionForMinute(startMinutes.value, handleOrbitRadius.value, 0))
 )
 const endHandleStyle = computed(() =>
-    buildHandleStyle(positionForMinute(endMinutes.value, handleOrbitRadius.value, 0), 'end')
+    buildHandleStyle(positionForMinute(endMinutes.value, handleOrbitRadius.value, 0))
 )
 
 function minuteToAngle(minute) {
@@ -458,7 +418,7 @@ function minuteToAngle(minute) {
 }
 
 function angleToPoint(angle, radius = FACE_RADIUS) {
-    const rad = (angle * Math.PI) / 180
+    const rad = (normalizeDegrees(angle) * Math.PI) / 180
     return {
         x: FACE_CENTER + radius * Math.cos(rad),
         y: FACE_CENTER + radius * Math.sin(rad)
@@ -492,6 +452,19 @@ function describeArcPath(radius, startAngle, endAngle) {
     return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArc} 1 ${end.x} ${end.y}`
 }
 
+function describeArcPathFromPieces(radius, pieces) {
+    if (!Array.isArray(pieces) || pieces.length === 0) return ''
+    if (pieces.length === 1) return describeArcPath(radius, pieces[0].start, pieces[0].end)
+    const start = angleToPoint(pieces[0].start, radius)
+    const end1 = angleToPoint(pieces[0].end, radius)
+    const end2 = angleToPoint(pieces[1].end, radius)
+    const sweep1 = normalizeDegrees(pieces[0].end - pieces[0].start)
+    const sweep2 = normalizeDegrees(pieces[1].end - pieces[1].start)
+    const large1 = sweep1 > 180 ? 1 : 0
+    const large2 = sweep2 > 180 ? 1 : 0
+    return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${large1} 1 ${end1.x} ${end1.y} A ${radius} ${radius} 0 ${large2} 1 ${end2.x} ${end2.y}`
+}
+
 function minutesDiff(a, b) {
     let diff = Number(a) - Number(b)
     while (diff > HALF_DAY_MINUTES) diff -= MINUTES_PER_DAY
@@ -517,7 +490,7 @@ function positionForMinute(minute, radiusOverride = null, radiusOffset = 30) {
     }
 }
 
-function buildHandleStyle(coords, type) {
+function buildHandleStyle(coords) {
     if (!coords || !Number.isFinite(coords.x) || !Number.isFinite(coords.y)) return {}
     const size = mainHandleSize.value
     return {
@@ -680,11 +653,11 @@ function handleDialPointerMove(event) {
     dragState.activePointerMinutes = pointerMinutes
     dragState.accumulatedMinutes += pointerDelta
     const nextMinutes = normalizeMinutes(dragState.handleStartMinutes + dragState.accumulatedMinutes)
-    let snappedMinutes = snapMinutesValue(nextMinutes)
+    let snappedMinutes = snapMinutes(nextMinutes, 'round')
     if (draggingHandle.value === 'start') {
         const end = endMinutes.value
         if (clockwiseDuration(snappedMinutes, end) < MIN_SCENARIO_SPAN_MINUTES) {
-            snappedMinutes = normalizeMinutes(snapMinutesFloor(end - MIN_SCENARIO_SPAN_MINUTES))
+            snappedMinutes = normalizeMinutes(snapMinutes(end - MIN_SCENARIO_SPAN_MINUTES, 'floor'))
         }
         markHandleTapMoved('start', event)
         if (suppressedSnapHandle.value === 'start') {
@@ -697,7 +670,7 @@ function handleDialPointerMove(event) {
     } else if (draggingHandle.value === 'end') {
         const start = startMinutes.value
         if (clockwiseDuration(start, snappedMinutes) < MIN_SCENARIO_SPAN_MINUTES) {
-            snappedMinutes = normalizeMinutes(snapMinutesCeil(start + MIN_SCENARIO_SPAN_MINUTES))
+            snappedMinutes = normalizeMinutes(snapMinutes(start + MIN_SCENARIO_SPAN_MINUTES, 'ceil'))
         }
         markHandleTapMoved('end', event)
         if (suppressedSnapHandle.value === 'end') {
@@ -774,29 +747,19 @@ function normalizeMinutes(value) {
     return next
 }
 
-function snapMinutesValue(value) {
-    if (!Number.isFinite(value)) return 0
-    return Math.round(value / minuteStep) * minuteStep
-}
-
-function snapMinutesFloor(value) {
-    if (!Number.isFinite(value)) return 0
-    const step = minuteStep
-    const scaled = Math.floor(value / step) * step
-    return scaled
-}
-
-function snapMinutesCeil(value) {
-    if (!Number.isFinite(value)) return 0
-    const step = minuteStep
-    const scaled = Math.ceil(value / step) * step
-    return scaled
+function snapMinutes(value, mode = 'round') {
+    const numeric = Number(value)
+    if (!Number.isFinite(numeric)) return 0
+    const scaled = numeric / minuteStep
+    if (mode === 'floor') return Math.floor(scaled) * minuteStep
+    if (mode === 'ceil') return Math.ceil(scaled) * minuteStep
+    return Math.round(scaled) * minuteStep
 }
 
 function toClockMode(stop, minutes) {
     if (!stop) return
     stop.mode = 'clock'
-    stop.clockMinutes = normalizeMinutes(snapMinutesValue(minutes))
+    stop.clockMinutes = normalizeMinutes(snapMinutes(minutes, 'round'))
     stop.offset = 0
 }
 
@@ -809,12 +772,19 @@ function applyMinutes(stop, minutes, type) {
     } else {
         toClockMode(stop, minutes)
     }
-    ensureMinScenarioSpan(type)
+    const adjusted = ensureMinScenarioSpan(type)
     if (type) enqueueStopEmit(type)
+    if (adjusted && adjusted !== type) enqueueStopEmit(adjusted)
 }
 
 function isAnchoredStop(stop) {
     return stop?.mode === 'sunrise' || stop?.mode === 'sunset'
+}
+
+function setClockStop(type, minutes) {
+    const normalized = normalizeMinutes(minutes)
+    if (type === 'start') toClockMode(localStartStop, normalized)
+    else if (type === 'end') toClockMode(localEndStop, normalized)
 }
 
 function ensureMinScenarioSpan(primaryType) {
@@ -827,28 +797,20 @@ function ensureMinScenarioSpan(primaryType) {
 
     if (primaryType === 'end') {
         if (endAnchored && !startAnchored) {
-            const desiredStart = snapMinutesFloor(end - MIN_SCENARIO_SPAN_MINUTES)
-            toClockMode(localStartStop, normalizeMinutes(desiredStart))
-            enqueueStopEmit('start')
-            return
+            setClockStop('start', snapMinutes(end - MIN_SCENARIO_SPAN_MINUTES, 'floor'))
+            return 'start'
         }
-        const desiredEnd = snapMinutesCeil(start + MIN_SCENARIO_SPAN_MINUTES)
-        toClockMode(localEndStop, normalizeMinutes(desiredEnd))
-        enqueueStopEmit('end')
-        return
+        setClockStop('end', snapMinutes(start + MIN_SCENARIO_SPAN_MINUTES, 'ceil'))
+        return 'end'
     }
 
     if (primaryType === 'start') {
         if (startAnchored && !endAnchored) {
-            const desiredEnd = snapMinutesCeil(start + MIN_SCENARIO_SPAN_MINUTES)
-            toClockMode(localEndStop, normalizeMinutes(desiredEnd))
-            enqueueStopEmit('end')
-            return
+            setClockStop('end', snapMinutes(start + MIN_SCENARIO_SPAN_MINUTES, 'ceil'))
+            return 'end'
         }
-        const desiredStart = snapMinutesFloor(end - MIN_SCENARIO_SPAN_MINUTES)
-        toClockMode(localStartStop, normalizeMinutes(desiredStart))
-        enqueueStopEmit('start')
-        return
+        setClockStop('start', snapMinutes(end - MIN_SCENARIO_SPAN_MINUTES, 'floor'))
+        return 'start'
     }
 }
 
@@ -894,7 +856,7 @@ function stopLabel(stop) {
     if (hours && minutes) unit = `${hours} ч ${minutes} мин`
     else if (hours) unit = `${hours} ч`
     else unit = `${minutes || abs} мин`
-    const phrase = offset > 0 ? `Через ${unit} после ${anchorWord}` : `За ${unit} до ${anchorWord}`
+    const phrase = offset > 0 ? `${unit} после ${anchorWord}` : `${unit} до ${anchorWord}`
     return `${phrase} (${actualTime})`
 }
 
@@ -929,19 +891,32 @@ function minutesToTimeString(minute) {
             <div class="outer-ring"></div>
 
             <svg class="scenario-ring-overlay" viewBox="0 0 200 200">
-                <g class="scenario-ring-group">
-                    <path v-for="arc in scenarioRingArcs" :key="arc.key" :d="arc.path" :stroke="arc.color"
-                        :stroke-width="arc.width" :class="{ pulse: arc.pulse, single: arc.single }" />
+                <defs v-if="scenarioArc && scenarioArcGradientVector">
+                    <linearGradient :id="gradientId" gradientUnits="userSpaceOnUse" :x1="scenarioArcGradientVector.x1"
+                        :y1="scenarioArcGradientVector.y1" :x2="scenarioArcGradientVector.x2"
+                        :y2="scenarioArcGradientVector.y2">
+                        <stop offset="0%" :stop-color="gradientStartColor" />
+                        <stop offset="100%" :stop-color="gradientEndColor" />
+                    </linearGradient>
+                </defs>
+                <g v-if="scenarioArc" class="scenario-ring-group">
+                    <path v-if="scenarioArc.kind === 'path'" :d="scenarioArc.path" :stroke="scenarioArc.stroke"
+                        :stroke-width="scenarioArc.width" :class="{ pulse: scenarioArc.pulse }" />
+                    <circle v-else-if="scenarioArc.kind === 'circle'" cx="100" cy="100" :r="scenarioArc.radius"
+                        fill="none" :stroke="scenarioArc.stroke" :stroke-width="scenarioArc.width"
+                        :class="{ pulse: scenarioArc.pulse }" />
                 </g>
                 <g v-if="scenarioBoundaryMarks" class="scenario-caps">
                     <g class="scenario-cap-group"
                         :transform="`translate(${scenarioBoundaryMarks.start.cap.x} ${scenarioBoundaryMarks.start.cap.y}) rotate(${scenarioBoundaryMarks.start.angle - 90})`">
-                        <path class="scenario-cap" :d="semicircleCapPath(scenarioBoundaryMarks.capRadius)"
+                        <path class="scenario-cap" :class="{ pulse: arcPulse }"
+                            :d="semicircleCapPath(scenarioBoundaryMarks.capRadius)"
                             :fill="scenarioBoundaryMarks.start.color" />
                     </g>
                     <g class="scenario-cap-group"
                         :transform="`translate(${scenarioBoundaryMarks.end.cap.x} ${scenarioBoundaryMarks.end.cap.y}) rotate(${scenarioBoundaryMarks.end.angle + 90})`">
-                        <path class="scenario-cap" :d="semicircleCapPath(scenarioBoundaryMarks.capRadius)"
+                        <path class="scenario-cap" :class="{ pulse: arcPulse }"
+                            :d="semicircleCapPath(scenarioBoundaryMarks.capRadius)"
                             :fill="scenarioBoundaryMarks.end.color" />
                     </g>
                 </g>
@@ -988,7 +963,7 @@ function minutesToTimeString(minute) {
 <style scoped>
 /* Styles retained from the previous dial implementation */
 .dial-section {
-    padding: 0 16px;
+    padding: 0 0px;
 
 }
 
@@ -1072,7 +1047,6 @@ function minutesToTimeString(minute) {
     z-index: 1;
     background: var(--bg-primary);
     box-shadow:
-        0 18px 46px rgba(0, 0, 0, 0.55),
         inset 0 0 28px rgba(0, 0, 0, 0.65),
         inset 0 0 120px rgba(0, 0, 0, 0.45);
 }
@@ -1083,7 +1057,6 @@ function minutesToTimeString(minute) {
     inset: var(--dial-face-inset);
     border-radius: 50%;
     box-shadow:
-        0 0 0 1px rgba(255, 255, 255, 0.06),
         inset 0 0 0 1px rgba(0, 0, 0, 0.7),
         inset 0 10px 20px rgba(0, 0, 0, 0.35);
     pointer-events: none;
@@ -1122,24 +1095,12 @@ function minutesToTimeString(minute) {
     stroke-width: 1px;
 }
 
-.face-ticks line.hour {
-    stroke-width: 1px;
-}
-
-.face-ticks line.major {
-    stroke-width: 1px;
-}
-
 .face-hour {
     font-size: 14px;
     font-weight: 600;
     dominant-baseline: middle;
     text-anchor: middle;
     letter-spacing: 0.04em;
-}
-
-.face-hour.major {
-    /* color comes from :fill binding */
 }
 
 @keyframes dial-segment-pulse {
@@ -1183,25 +1144,31 @@ function minutesToTimeString(minute) {
     pointer-events: none;
 }
 
-.scenario-ring-group path {
+.scenario-ring-group path,
+.scenario-ring-group circle {
     fill: none;
     stroke-linecap: butt;
-    stroke-linejoin: bevel;
+    stroke-linejoin: round;
     opacity: 0.95;
+    shape-rendering: geometricPrecision;
 }
 
 .scenario-cap {
     opacity: 0.98;
 }
 
+.scenario-cap.pulse {
+    animation: dial-segment-pulse 3s ease-in-out infinite;
+}
+
 .scenario-boundary {
     stroke: #030712;
     stroke-width: 1px;
     stroke-linecap: round;
-
 }
 
-.scenario-ring-group path.pulse {
+.scenario-ring-group path.pulse,
+.scenario-ring-group circle.pulse {
     animation: dial-segment-pulse 3s ease-in-out infinite;
 }
 
@@ -1223,7 +1190,8 @@ function minutesToTimeString(minute) {
 }
 
 .dial.inactive .dial-handle,
-.dial.inactive .scenario-ring-group path {
+.dial.inactive .scenario-ring-group path,
+.dial.inactive .scenario-ring-group circle {
     opacity: 0.65;
 }
 </style>

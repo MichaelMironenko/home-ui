@@ -4,6 +4,7 @@ import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { applyBrightnessMode } from '../../utils/stopStateRules'
 import { computeEnvironment } from '../../utils/scenarioUtils'
 import AutoBrightnessGraph from './AutoBrightnessGraph.vue'
+import BottomSheet from './BottomSheet.vue'
 import SegmentedControl from './SegmentedControl.vue'
 
 const props = defineProps({
@@ -62,11 +63,6 @@ const sunAnchorOffsets = reactive({
 })
 const sunEnvironment = computed(() => computeEnvironment(props.time || {}))
 
-const sheetClosing = ref(false)
-const sheetTranslate = ref(0)
-const sheetDragStartY = ref(null)
-const sheetDragActive = ref(false)
-const sheetDragElement = ref(null)
 const SENSOR_MAX_FALLBACK = 100000
 const SENSOR_MIN_FLOOR = 1
 const autoBrightnessViewMode = ref('basic')
@@ -105,61 +101,9 @@ watch(
     (open) => {
         if (!open) {
             stopTimeWriteEnabled.value = false
-            resetSheetState()
         }
     }
 )
-
-function resetSheetState() {
-    sheetClosing.value = false
-    sheetTranslate.value = 0
-    sheetDragStartY.value = null
-    sheetDragActive.value = false
-    sheetDragElement.value = null
-}
-
-function requestClose() {
-    sheetClosing.value = true
-    sheetTranslate.value = 200
-    setTimeout(() => {
-        resetSheetState()
-        emit('close')
-    }, 250)
-}
-
-function startSheetDrag(event) {
-    if (event.pointerType === 'mouse') return
-    sheetDragStartY.value = event.clientY
-    sheetDragActive.value = true
-    sheetDragElement.value = event.currentTarget
-    sheetDragElement.value?.setPointerCapture?.(event.pointerId)
-}
-
-function handleSheetDrag(event) {
-    if (!sheetDragActive.value || sheetDragStartY.value == null) return
-    if (event.pointerType === 'mouse') return
-    event.preventDefault()
-    const delta = event.clientY - sheetDragStartY.value
-    sheetTranslate.value = Math.max(0, delta)
-}
-
-function endSheetDrag(event) {
-    if (!sheetDragActive.value) return
-    sheetDragElement.value?.releasePointerCapture?.(event.pointerId)
-    if (sheetTranslate.value > 120) {
-        requestClose()
-    } else {
-        sheetTranslate.value = 0
-    }
-    sheetDragActive.value = false
-    sheetDragStartY.value = null
-    sheetDragElement.value = null
-}
-
-const sheetTransform = computed(() => {
-    const translate = Math.max(sheetTranslate.value, 0)
-    return `translateY(${translate}px)`
-})
 
 function setColorMode(mode) {
     if (!isStartContext.value) return
@@ -695,23 +639,8 @@ function openCustomColorPicker() {
 </script>
 
 <template>
-    <Teleport to="body">
-        <div v-if="open" class="stop-sheet-overlay" @touchmove.passive>
-            <div class="stop-sheet-backdrop" @click="requestClose" />
-            <div class="stop-sheet-panel" :class="{ closing: sheetClosing }" :style="{ transform: sheetTransform }">
-                <header class="stop-sheet-header" @pointerdown="startSheetDrag" @pointermove="handleSheetDrag"
-                    @pointerup="endSheetDrag" @pointercancel="endSheetDrag">
-                    <button type="button" class="stop-sheet-close" aria-label="Закрыть" @pointerdown.stop
-                        @click="requestClose">
-                        <svg viewBox="0 0 24 24" aria-hidden="true" class="stop-sheet-close-icon">
-                            <path
-                                d="M18.3 5.71a1 1 0 0 0-1.41 0L12 10.59 7.11 5.7A1 1 0 0 0 5.7 7.11L10.59 12l-4.9 4.89a1 1 0 1 0 1.42 1.42L12 13.41l4.89 4.9a1 1 0 0 0 1.42-1.42L13.41 12l4.9-4.89a1 1 0 0 0 0-1.4Z" />
-                        </svg>
-                    </button>
-                    <h3>{{ sheetTitle }}</h3>
-                </header>
-                <div class="stop-sheet-content">
-                    <div class="stop-editor">
+    <BottomSheet :open="open" :title="sheetTitle" @close="emit('close')">
+        <div class="stop-editor">
                         <section class="control-block time-section">
 
 
@@ -925,113 +854,11 @@ function openCustomColorPicker() {
                         <p v-if="!isStartContext" class="mode-note">
                             Выбрать другой режим изменения цвета и яркости можно в настройках стартового состояния.
                         </p>
-                    </div>
-                </div>
-            </div>
         </div>
-    </Teleport>
+    </BottomSheet>
 </template>
 
 <style scoped>
-.stop-sheet-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 40;
-    display: flex;
-    align-items: flex-end;
-    justify-content: center;
-    pointer-events: auto;
-}
-
-.stop-sheet-backdrop {
-    position: absolute;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.6);
-}
-
-.stop-sheet-panel {
-    position: relative;
-    width: min(560px, 100%);
-    max-height: 90vh;
-    background: #0d1322;
-    border-radius: 28px 28px 0 0;
-    padding-bottom: 32px;
-    animation: stop-sheet-slide-in 0.3s ease-out forwards;
-    transform: translateY(0);
-    display: flex;
-    flex-direction: column;
-}
-
-.stop-sheet-panel.closing {
-    animation: stop-sheet-slide-out 0.25s ease-in forwards;
-}
-
-@keyframes stop-sheet-slide-in {
-    from {
-        transform: translateY(100%);
-    }
-
-    to {
-        transform: translateY(0);
-    }
-}
-
-@keyframes stop-sheet-slide-out {
-    from {
-        transform: translateY(0);
-    }
-
-    to {
-        transform: translateY(100%);
-    }
-}
-
-.stop-sheet-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 24px 16px 12px;
-    cursor: grab;
-    touch-action: none;
-}
-
-.stop-sheet-header h3 {
-    margin: 0;
-    font-size: 1rem;
-}
-
-.stop-sheet-close {
-    width: 44px;
-    height: 32px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border: none;
-    background: transparent;
-    color: #f8fafc;
-    font-size: 16px;
-    cursor: pointer;
-    border-radius: 12px;
-    -webkit-tap-highlight-color: transparent;
-}
-
-.stop-sheet-close:active {
-    background: rgba(148, 163, 184, 0.12);
-}
-
-.stop-sheet-close-icon {
-    width: 22px;
-    height: 22px;
-    fill: currentColor;
-}
-
-.stop-sheet-content {
-    padding: 0 24px 24px;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    flex: 1;
-}
-
 .stop-editor {
     display: flex;
     flex-direction: column;

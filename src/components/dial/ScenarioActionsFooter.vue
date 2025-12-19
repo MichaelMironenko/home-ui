@@ -1,42 +1,9 @@
 <script setup>
-import { computed } from 'vue'
-
-import SegmentedControl from './SegmentedControl.vue'
-
-const props = defineProps({
-    options: {
-        type: Array,
-        required: true
-    },
-    value: {
-        type: String,
-        required: true
-    },
-    showToggle: {
-        type: Boolean,
-        default: true
-    }
-})
-
-const emit = defineEmits(['update:value', 'save', 'delete'])
-
-const segmentedOptions = computed(() =>
-    (props.options || []).map((option) => ({
-        value: option.id,
-        label: option.label
-    }))
-)
-
-function select(value) {
-    if (props.value === value) return
-    emit('update:value', value)
-}
+const emit = defineEmits(['save', 'delete'])
 </script>
 
 <template>
-    <section class="presence-section">
-        <SegmentedControl v-if="showToggle" aria-label="Режим запуска" :model-value="value"
-            @update:model-value="select" :options="segmentedOptions" />
+    <section class="actions-footer">
         <div class="action-row" role="group" aria-label="Действия сценария">
             <button type="button" class="ghost" @click="emit('delete')">Удалить</button>
             <button type="button" class="primary" @click="emit('save')">Сохранить</button>
@@ -45,7 +12,7 @@ function select(value) {
 </template>
 
 <style scoped>
-.presence-section {
+.actions-footer {
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -77,7 +44,7 @@ function select(value) {
     color: #f87171;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 499px) {
 
     .action-row {
         position: fixed;
