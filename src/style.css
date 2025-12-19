@@ -4,12 +4,18 @@
   --surface-card: #0b1223;
   --surface-muted: #111827;
   --surface-border: rgba(148, 163, 184, 0.2);
+  --surface-border-strong: rgba(148, 163, 184, 0.4);
+  --surface-hover: rgba(148, 163, 184, 0.1);
   --text-primary: #e2e8f0;
   --text-muted: #94a3b8;
   --text-subtle: #cbd5f5;
   --primary: #a855f7;
   --primary-strong: #7c3aed;
   --danger: #ef4444;
+  --danger-border: rgba(239, 68, 68, 0.4);
+  --danger-soft: rgba(239, 68, 68, 0.18);
+  --danger-text-soft: #fecaca;
+  --chip-bg: rgba(226, 232, 240, 0.08);
   --radius-lg: 16px;
   --transition-base: 0.2s ease;
 }

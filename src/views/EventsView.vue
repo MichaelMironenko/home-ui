@@ -366,16 +366,16 @@ async function refreshAll() {
 
 .subtitle {
     margin: 4px 0 0;
-    color: #94a3b8;
+    color: var(--text-muted);
     font-size: 14px;
 }
 
 .secondary {
     padding: 10px 16px;
     background: transparent;
-    border: 1px solid rgba(148, 163, 184, 0.4);
+    border: 1px solid var(--surface-border-strong);
     border-radius: 8px;
-    color: #e2e8f0;
+    color: var(--text-primary);
     cursor: pointer;
     transition: background 0.2s ease;
 }
@@ -386,14 +386,14 @@ async function refreshAll() {
 }
 
 .secondary:not(:disabled):hover {
-    background: rgba(148, 163, 184, 0.1);
+    background: var(--surface-hover);
 }
 
 .panel {
     padding: 20px;
     border-radius: 16px;
-    background: rgba(15, 23, 42, 0.6);
-    border: 1px solid rgba(148, 163, 184, 0.2);
+    background: var(--surface-card);
+    border: 1px solid var(--surface-border);
 }
 
 .metrics-panel {
@@ -413,12 +413,12 @@ async function refreshAll() {
 .metrics-head h2 {
     margin: 0;
     font-size: 20px;
-    color: #f8fafc;
+    color: var(--text-primary);
 }
 
 .metrics-subtitle {
     margin: 4px 0 0;
-    color: #94a3b8;
+    color: var(--text-muted);
     font-size: 12px;
 }
 
@@ -435,23 +435,23 @@ async function refreshAll() {
 
 .summary-label {
     font-size: 11px;
-    color: #94a3b8;
+    color: var(--text-muted);
 }
 
 .summary-value {
     font-size: 18px;
     font-weight: 600;
-    color: #f8fafc;
+    color: var(--text-primary);
 }
 
 .metrics-note {
     margin: 0;
     font-size: 13px;
-    color: #94a3b8;
+    color: var(--text-muted);
 }
 
 .metrics-note.error {
-    color: #fca5a5;
+    color: var(--danger);
 }
 
 .metrics-sections {
@@ -470,7 +470,7 @@ async function refreshAll() {
     margin: 0;
     font-size: 14px;
     font-weight: 600;
-    color: #e2e8f0;
+    color: var(--text-primary);
 }
 
 .metrics-list {
@@ -487,14 +487,14 @@ async function refreshAll() {
     justify-content: space-between;
     align-items: center;
     padding: 6px 10px;
-    background: rgba(30, 41, 59, 0.75);
+    background: var(--surface-muted);
     border-radius: 8px;
 }
 
 .row-label {
     font-family: 'SFMono-Regular', monospace;
     font-size: 12px;
-    color: #cbd5f5;
+    color: var(--text-subtle);
 }
 
 .row-value {
@@ -504,8 +504,8 @@ async function refreshAll() {
 }
 
 .panel.error {
-    border-color: rgba(248, 113, 113, 0.4);
-    color: #fecaca;
+    border-color: var(--danger-border);
+    color: var(--danger-text-soft);
 }
 
 .timeline {
@@ -516,21 +516,21 @@ async function refreshAll() {
 
 .empty {
     margin: 0;
-    color: #94a3b8;
+    color: var(--text-muted);
 }
 
 .event-card {
     padding: 10px 18px;
     border-radius: 14px;
-    background: rgba(15, 23, 42, 0.65);
-    border: 1px solid rgba(148, 163, 184, 0.2);
+    background: var(--surface-card);
+    border: 1px solid var(--surface-border);
     display: flex;
     flex-direction: column;
     gap: 8px;
 }
 
 .event-card:hover .event-name {
-    color: #ffffff;
+    color: var(--text-primary);
 }
 
 .event-head {
@@ -564,7 +564,7 @@ async function refreshAll() {
 
 .event-row-time {
     font-size: 13px;
-    color: #cbd5f5;
+    color: var(--text-subtle);
     white-space: nowrap;
 }
 
@@ -572,7 +572,7 @@ async function refreshAll() {
     flex: 0 0 auto;
     font-size: 13px;
     line-height: 1;
-    color: #93c5fd;
+    color: var(--text-subtle);
     filter: saturate(0.9);
 }
 
@@ -581,10 +581,10 @@ async function refreshAll() {
     text-transform: uppercase;
     letter-spacing: 0.08em;
     font-weight: 600;
-    color: #93c5fd;
+    color: var(--text-subtle);
     padding: 1px 6px;
     border-radius: 999px;
-    background: rgba(59, 130, 246, 0.13);
+    background: var(--chip-bg);
 }
 
 .event-trigger.trigger-timer {
@@ -598,13 +598,13 @@ async function refreshAll() {
 }
 
 .event-trigger.trigger-system {
-    color: #fecaca;
-    background: rgba(248, 113, 113, 0.15);
+    color: var(--danger-text-soft);
+    background: var(--danger-soft);
 }
 
 .event-name {
     font-weight: 600;
-    color: #f8fafc;
+    color: var(--text-primary);
     font-size: 16px;
     margin: 0;
 }
@@ -638,8 +638,8 @@ async function refreshAll() {
     text-transform: uppercase;
     letter-spacing: 0.06em;
     font-weight: 600;
-    background: rgba(248, 250, 252, 0.08);
-    color: #f1f5f9;
+    background: var(--chip-bg);
+    color: var(--text-primary);
 }
 
 .status-pill.pause {
@@ -655,7 +655,7 @@ async function refreshAll() {
     flex-wrap: wrap;
     gap: 16px;
     font-size: 13px;
-    color: #cbd5f5;
+    color: var(--text-subtle);
     justify-content: flex-start;
     min-width: 0;
     align-items: center;
@@ -665,7 +665,7 @@ async function refreshAll() {
     display: flex;
     align-items: center;
     gap: 6px;
-    color: #f8fafc;
+    color: var(--text-primary);
     font-weight: 500;
 }
 
@@ -675,7 +675,7 @@ async function refreshAll() {
 
 .metric-value {
     font-weight: 400;
-    color: #a7abb5;
+    color: var(--text-muted);
 }
 
 .metric-color .metric-value {
@@ -709,7 +709,7 @@ async function refreshAll() {
 }
 
 .error {
-    color: #fca5a5;
+    color: var(--danger);
 }
 
 	@media (max-width: 600px) {
