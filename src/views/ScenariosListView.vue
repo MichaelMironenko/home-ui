@@ -179,11 +179,11 @@ async function togglePause(item) {
     toggling.value = { ...toggling.value, [item.id]: true }
     try {
         if (isPaused(item)) {
-            const res = await scenariosRequest('/resume', { method: 'POST', body: { id: item.id } })
+            const res = await scenariosRequest('/scenario/resume', { method: 'POST', body: { id: item.id } })
             item.pause = res?.result?.pause || null
             if (res?.status) item.status = summarizeStatusRecord(res.status)
         } else {
-            const res = await scenariosRequest('/pause', { method: 'POST', body: { id: item.id } })
+            const res = await scenariosRequest('/scenario/pause', { method: 'POST', body: { id: item.id } })
             item.pause = res?.pause || { setAt: Date.now(), reason: { source: 'manual' } }
             if (res?.status) item.status = summarizeStatusRecord(res.status)
         }

@@ -737,7 +737,7 @@ async function saveScenario(options = {}) {
     try {
         const payload = JSON.parse(JSON.stringify(scenario))
         console.info('[auto-light] saving payload', payload)
-        const response = await scenarioRequest('/save', { method: 'POST', body: { scenario: payload } })
+        const response = await scenarioRequest('/scenario/save', { method: 'POST', body: { scenario: payload } })
         hydrateScenarioFromResponse(response)
         wasSaved.value = true
         if (!props.scenarioId && scenario.id) emit('saved', scenario.id)
@@ -802,7 +802,7 @@ async function handleRunPause() {
     }
     error.value = ''
     const pauseRequested = !isPaused.value
-    const endpoint = pauseRequested ? '/pause' : '/resume'
+    const endpoint = pauseRequested ? '/scenario/pause' : '/scenario/resume'
     const logAction = pauseRequested ? 'pause' : 'resume'
     console.info('[auto-light] run/pause request', { id: scenario.id, action: logAction })
     running.value = true
@@ -845,7 +845,6 @@ async function toggleDisabled() {
         return
     }
     const nextDisabled = !scenario.disabled
-    const path = nextDisabled ? '/disable' : '/enable'
     console.info('[auto-light] toggle disabled request', { id: scenario.id, disable: nextDisabled })
     error.value = ''
     message.value = ''
@@ -854,7 +853,9 @@ async function toggleDisabled() {
         temperatureControl.reset()
     }
     try {
-        const response = await scenarioRequest(path, { method: 'POST', body: { id: scenario.id } })
+        const payload = JSON.parse(JSON.stringify(scenario))
+        payload.disabled = nextDisabled
+        const response = await scenarioRequest('/scenario/save', { method: 'POST', body: { scenario: payload } })
         console.info('[auto-light] toggle disabled response', response)
         if (response?.scenario?.disabled != null) {
             scenario.disabled = response.scenario.disabled === true

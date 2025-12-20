@@ -46,6 +46,9 @@ const indicatorMetrics = reactive({
 })
 let resizeObserver = null
 
+const openTooltipFor = ref(null)
+let tooltipCloseHandler = null
+
 function setOptionRef(el, value) {
     if (!value) return
     if (el) optionElementMap.set(value, el)
@@ -74,6 +77,36 @@ function selectOption(value) {
     emit('update:modelValue', value)
 }
 
+function isOptionDisabled(option) {
+    return Boolean(option?.disabled)
+}
+
+function handleOptionClick(option) {
+    if (!option) return
+    if (props.disabled) return
+    if (isOptionDisabled(option)) return
+    selectOption(option?.value)
+}
+
+function closeTooltip() {
+    openTooltipFor.value = null
+}
+
+function toggleTooltip(value) {
+    openTooltipFor.value = openTooltipFor.value === value ? null : value
+}
+
+function handleTooltipKeydown(event, value) {
+    if (!event) return
+    if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        toggleTooltip(value)
+    } else if (event.key === 'Escape') {
+        event.preventDefault()
+        closeTooltip()
+    }
+}
+
 onMounted(() => {
     updateIndicatorMetrics()
     if (window.ResizeObserver) {
@@ -89,6 +122,11 @@ onMounted(() => {
 onBeforeUnmount(() => {
     if (resizeObserver) resizeObserver.disconnect()
     else window.removeEventListener('resize', updateIndicatorMetrics)
+    if (tooltipCloseHandler) {
+        document.removeEventListener('pointerdown', tooltipCloseHandler, true)
+        document.removeEventListener('keydown', tooltipCloseHandler, true)
+        tooltipCloseHandler = null
+    }
 })
 
 watch(
@@ -98,6 +136,33 @@ watch(
     },
     { deep: true }
 )
+
+watch(
+    () => openTooltipFor.value,
+    (value) => {
+        if (!value) {
+            if (tooltipCloseHandler) {
+                document.removeEventListener('pointerdown', tooltipCloseHandler, true)
+                document.removeEventListener('keydown', tooltipCloseHandler, true)
+                tooltipCloseHandler = null
+            }
+            return
+        }
+        if (tooltipCloseHandler) return
+        tooltipCloseHandler = (event) => {
+            if (event?.type === 'keydown') {
+                if (event.key === 'Escape') closeTooltip()
+                return
+            }
+            const root = segmentedRef.value
+            const target = event?.target
+            if (root && target && root.contains(target)) return
+            closeTooltip()
+        }
+        document.addEventListener('pointerdown', tooltipCloseHandler, true)
+        document.addEventListener('keydown', tooltipCloseHandler, true)
+    }
+)
 </script>
 
 <template>
@@ -106,10 +171,19 @@ watch(
         <div v-if="optionCount > 0" class="segmented-indicator" aria-hidden="true" :style="fit && indicatorMetrics.ready
             ? { left: '0px', width: `${indicatorMetrics.width}px`, transform: `translateX(${indicatorMetrics.left}px)` }
             : undefined" />
-        <button v-for="option in options" :key="String(option?.value)" type="button"
-            :disabled="disabled || Boolean(option?.disabled)" :class="{ active: option?.value === modelValue }"
-            :ref="(el) => setOptionRef(el, option?.value)" @click="selectOption(option?.value)">
-            {{ option?.label }}
+        <button v-for="option in options" :key="String(option?.value)" type="button" :disabled="disabled"
+            :aria-disabled="(!disabled && isOptionDisabled(option)) || undefined"
+            :class="{ active: option?.value === modelValue, disabled: !disabled && isOptionDisabled(option) }"
+            :ref="(el) => setOptionRef(el, option?.value)" @click="handleOptionClick(option)">
+            <span class="segmented-label">{{ option?.label }}</span>
+            <span v-if="option?.warning || option?.tooltip" class="segmented-help" role="button" tabindex="0"
+                :class="{ warning: option?.warning }" :title="option?.tooltip || ''"
+                @click.stop="toggleTooltip(option?.value)" @keydown="handleTooltipKeydown($event, option?.value)">
+                i
+            </span>
+            <div v-if="openTooltipFor === option?.value && option?.tooltip" class="segmented-tooltip" role="tooltip">
+                {{ option?.tooltip }}
+            </div>
         </button>
     </div>
 </template>
@@ -165,6 +239,11 @@ watch(
     -webkit-tap-highlight-color: transparent;
     position: relative;
     z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 8px;
 }
 
 .segmented.dense button {
@@ -180,8 +259,71 @@ watch(
     opacity: 0.55;
 }
 
+.segmented button.disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
 .segmented button.active {
     color: var(--text-primary, rgba(226, 232, 240, 1));
+}
+
+.segmented-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.segmented-help {
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.55);
+    color: rgba(148, 163, 184, 0.95);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    line-height: 1;
+    font-weight: 700;
+    cursor: help;
+    user-select: none;
+    flex: 0 0 auto;
+}
+
+.segmented-help.warning {
+    border-color: rgba(251, 191, 36, 0.75);
+    color: rgba(251, 191, 36, 0.95);
+}
+
+.segmented-tooltip {
+    position: absolute;
+    z-index: 10;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(100% + 8px);
+    width: min(260px, calc(100vw - 48px));
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(11, 18, 35, 0.98);
+    color: rgba(226, 232, 240, 1);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.25;
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+}
+
+.segmented-tooltip::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 12px;
+    height: 12px;
+    background: rgba(11, 18, 35, 0.98);
+    clip-path: polygon(0 0, 100% 0, 50% 100%);
 }
 
 @media (prefers-reduced-motion: reduce) {

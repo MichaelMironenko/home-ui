@@ -1,12 +1,40 @@
 <script setup>
+import { computed } from 'vue'
+
+const props = defineProps({
+    createMode: {
+        type: Boolean,
+        default: false
+    },
+    canDelete: {
+        type: Boolean,
+        default: true
+    },
+    saving: {
+        type: Boolean,
+        default: false
+    },
+    dirty: {
+        type: Boolean,
+        default: false
+    }
+})
+
 const emit = defineEmits(['save', 'delete'])
+
+const primaryLabel = computed(() => (props.createMode ? 'Создать' : 'Сохранить'))
 </script>
 
 <template>
     <section class="actions-footer">
+        <p v-if="dirty" class="dirty-hint">Есть несохраненные изменения</p>
         <div class="action-row" role="group" aria-label="Действия сценария">
-            <button type="button" class="ghost" @click="emit('delete')">Удалить</button>
-            <button type="button" class="primary" @click="emit('save')">Сохранить</button>
+            <button v-if="canDelete" type="button" class="ghost" :disabled="saving" @click="emit('delete')">
+                Удалить
+            </button>
+            <button type="button" class="primary" :disabled="saving" @click="emit('save')">
+                {{ primaryLabel }}
+            </button>
         </div>
     </section>
 </template>
@@ -16,6 +44,12 @@ const emit = defineEmits(['save', 'delete'])
     display: flex;
     flex-direction: column;
     gap: 12px;
+}
+
+.dirty-hint {
+    margin: 0;
+    font-size: 13px;
+    color: rgba(248, 250, 252, 0.7);
 }
 
 .action-row {

@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { ensureApiBase } from '../utils/apiBase'
 
 const profile = ref(null)
@@ -14,6 +14,33 @@ const defaultHeaders = {
   Accept: 'application/json',
   'Content-Type': 'application/json'
 }
+
+const presenceConfigured = computed(() => {
+  const value = profile.value
+  if (!value || typeof value !== 'object') return false
+
+  if (value.presenceConfigured === true) return true
+  if (value.presenceReady === true) return true
+  if (value.presenceEnabled === true) return true
+
+  const presence = value.presence || value.presenceStatus || value.presenceState || null
+  if (presence && typeof presence === 'object') {
+    if (presence.configured === true) return true
+    if (presence.ready === true) return true
+    if (presence.enabled === true) return true
+
+    const hasHome =
+      Boolean(presence.homeSeenAt || presence.homeAt || presence.lastHomeAt || presence.home_ts) ||
+      Boolean(value.presenceHomeSeenAt || value.presenceHomeAt)
+    const hasAway =
+      Boolean(presence.awaySeenAt || presence.awayAt || presence.lastAwayAt || presence.away_ts) ||
+      Boolean(value.presenceAwaySeenAt || value.presenceAwayAt)
+
+    if (hasHome && hasAway) return true
+  }
+
+  return false
+})
 
 let clientIpHint = null
 
@@ -92,6 +119,24 @@ async function updateCity(city) {
   }
 }
 
+async function deleteProfile() {
+  profileError.value = null
+  try {
+    console.log('[profile] deleteProfile request')
+    await requestJson('/api/profile', {
+      method: 'DELETE',
+      headers: defaultHeaders
+    })
+    profile.value = null
+    instructions.value = null
+    return true
+  } catch (err) {
+    profileError.value = err?.message || String(err)
+    console.warn('[profile] deleteProfile failed', err)
+    throw err
+  }
+}
+
 async function detectCity(timezone = null) {
   cityDetectionLoading.value = true
   cityDetectionError.value = null
@@ -158,10 +203,23 @@ async function geocodeCityByName(name, { limit = 5 } = {}) {
   }
 }
 
+async function issuePresenceToken() {
+  profileError.value = null
+  try {
+    const data = await requestJson('/api/profile/presence-token', { method: 'POST', headers: defaultHeaders })
+    return { token: data?.token || null, createdAt: data?.createdAt || null }
+  } catch (err) {
+    profileError.value = err?.message || String(err)
+    console.warn('[profile] issuePresenceToken failed', err)
+    throw err
+  }
+}
+
 export function useProfile() {
   return {
     profile,
     instructions,
+    presenceConfigured,
     loadingProfile,
     profileError,
     cityDetection,
@@ -171,6 +229,8 @@ export function useProfile() {
     updateCity,
     detectCity,
     reverseGeocode,
-    geocodeCityByName
+    geocodeCityByName,
+    issuePresenceToken,
+    deleteProfile
   }
 }

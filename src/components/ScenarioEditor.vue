@@ -1254,7 +1254,7 @@ async function handleSave() {
     try {
         const payload = buildScenarioPayload()
         console.log('Saving scenario payload:', payload)
-        const res = await scenariosFetch('/save', { method: 'POST', body: { scenario: payload } })
+        const res = await scenariosFetch('/scenario/save', { method: 'POST', body: { scenario: payload } })
         if (res?.scenario) {
             const nextPause = res?.trigger?.result?.pause || res?.status?.pause || null
             const nextStatus = res?.status || null
@@ -1294,7 +1294,7 @@ async function handleRun() {
     }
     running.value = true
     try {
-        const res = await scenariosFetch('/run', { method: 'POST', body: { id: state.id } })
+        const res = await scenariosFetch('/scenario/run', { method: 'POST', body: { id: state.id } })
         if (res?.result) {
             const { active, actionsSent, reason, pause } = res.result
             if (pause) pauseInfo.value = pause
@@ -1341,7 +1341,7 @@ async function handleDelete() {
     validationErrors.value = []
     conflict.value = null
     try {
-        await scenariosFetch('/delete', { method: 'POST', body: { id: scenarioId } })
+        await scenariosFetch('/scenario/delete', { method: 'POST', body: { id: scenarioId } })
         resetState()
         markSnapshot()
         message.value = 'Сценарий удалён'
@@ -1390,9 +1390,9 @@ async function handleTogglePause() {
         return
     }
     try {
-        const path = isPaused.value ? '/resume' : '/pause'
+        const path = isPaused.value ? '/scenario/resume' : '/scenario/pause'
         const res = await scenariosFetch(path, { method: 'POST', body: { id: state.id } })
-        if (path === '/pause') {
+        if (path === '/scenario/pause') {
             pauseInfo.value = res?.pause || { setAt: Date.now(), reason: { source: 'manual' } }
             if (res?.status && !statusInfo.value) statusInfo.value = res.status
             message.value = 'Сценарий поставлен на паузу'

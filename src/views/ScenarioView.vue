@@ -1,6 +1,6 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { getConfig } from '../lib/api'
 import { computeEnvironment, createDefaultScenario, normalizeScenarioStruct } from '../utils/scenarioUtils'
 import { trackFunctionCall } from '../lib/requestMetrics'
@@ -20,6 +20,7 @@ import DeviceSelectorSheet from '../components/dial/DeviceSelectorSheet.vue'
 import StopStateSheet from '../components/dial/StopStateSheet.vue'
 import SegmentedControl from '../components/dial/SegmentedControl.vue'
 import { useScenarioApi } from '../composables/useScenarioApi'
+import { useProfile } from '../composables/useProfile'
 import {
     hexToHsv,
     hsvToHex,
@@ -38,6 +39,7 @@ const scenarioStatusSummary = ref(null)
 const scenarioPauseInfo = ref(null)
 const route = useRoute()
 const router = useRouter()
+const profileStore = useProfile()
 const routeScenarioId = computed(() => {
     const id = route.params.id
     return typeof id === 'string' ? id : ''
@@ -45,10 +47,21 @@ const routeScenarioId = computed(() => {
 const isCreateMode = computed(() => route.name === 'scenario-create')
 const scenarioApiReady = ref(false)
 
-const presenceOptions = [
-    { id: 'any', label: 'Всегда' },
-    { id: 'home', label: 'Когда кто-то дома' }
-]
+const presenceConfigured = computed(() => !!profileStore.presenceConfigured.value)
+const PRESENCE_SETUP_TOOLTIP = 'Для работы сценария по присутствию сначала нужно настроить его в профиле'
+const presenceOptions = computed(() => {
+    const ready = presenceConfigured.value
+    return [
+        { id: 'any', label: 'Всегда' },
+        {
+            id: 'home',
+            label: 'Когда кто-то дома',
+            disabled: !ready,
+            warning: !ready,
+            tooltip: !ready ? PRESENCE_SETUP_TOOLTIP : null
+        }
+    ]
+})
 const presenceMode = ref('any')
 const weekdayOptions = [
     { value: 1, label: 'Пн' },
@@ -64,6 +77,7 @@ const { loadConfig: loadScenarioConfig, scenarioRequest } = useScenarioApi()
 const scenario = reactive(createDefaultScenario())
 scenario.id = ''
 scenario.name = ''
+const canControlRuntime = computed(() => !isCreateMode.value && !!scenario.id)
 const selectedDevicesIds = ref(new Set())
 const selectedGroupIds = ref(new Set())
 const selectionDirty = ref(false)
@@ -86,7 +100,13 @@ const scenarioNameValue = computed({
     }
 })
 
-const scenarioNameDisplay = computed(() => scenarioNameValue.value || 'Название сценария')
+function normalizeScenarioName(value) {
+    const trimmed = String(value ?? '').trim()
+    return trimmed.slice(0, 30)
+}
+
+const scenarioNameDisplayTrimmed = computed(() => normalizeScenarioName(scenarioNameValue.value))
+const scenarioNameUiLabel = computed(() => scenarioNameDisplayTrimmed.value || 'Название сценария')
 
 function updateScenarioPageTitle() {
     const trimmedName = scenarioNameValue.value?.trim()
@@ -114,6 +134,7 @@ watch(editingName, (active) => {
 
 function finishEditingName() {
     editingName.value = false
+    scenario.name = normalizeScenarioName(scenario.name)
     if (!scenario.name) scenario.name = 'Новый сценарий'
 }
 
@@ -142,7 +163,7 @@ const scheduleDaysSummary = computed(() => {
 })
 
 const schedulePresenceSummary = computed(() => {
-    return presenceOptions.find((option) => option.id === presenceMode.value)?.label || 'Всегда'
+    return presenceOptions.value.find((option) => option.id === presenceMode.value)?.label || 'Всегда'
 })
 
 const scheduleSummary = computed(() => `${scheduleDaysSummary.value} · ${schedulePresenceSummary.value}`)
@@ -496,14 +517,6 @@ watch(
     { immediate: true }
 )
 
-function toggleScenarioPause() {
-    if (scenarioDisplayStatus.value === 'off') {
-        scenarioStatus.value = 'running'
-        return
-    }
-    scenarioStatus.value = scenarioDisplayStatus.value === 'paused' ? 'running' : 'paused'
-}
-
 function toggleScenarioPower() {
     scenarioStatus.value = scenarioDisplayStatus.value === 'off' ? 'running' : 'off'
 }
@@ -617,7 +630,13 @@ async function loadConfig() {
     try {
         const raw = await getConfig()
         const apiBase =
-            raw.api || raw.apiBase || raw.scenariosUrl || raw.scenariosURL || raw.scenariosBase || raw.scenarioUrl || ''
+            raw.api ||
+            raw.apiBase ||
+            raw.scenariosUrl ||
+            raw.scenariosURL ||
+            raw.scenariosBase ||
+            raw.scenarioUrl ||
+            ''
         config.base = (apiBase || '').replace(/\/+$/, '')
         config.keyHeader = raw.keyHeader || raw['x-api-key-header'] || 'x-api-key'
         config.keyValue = raw.keyValue || raw.apiKey || raw['x-api-key'] || ''
@@ -670,13 +689,14 @@ async function apiFetch(path, options = {}) {
 
 function buildScenarioPayload() {
     const payload = JSON.parse(JSON.stringify(scenario))
-    payload.name = payload.name || 'Сценарий с кругом'
+    payload.name = normalizeScenarioName(payload.name) || 'Новый сценарий'
     payload.target = payload.target || {}
-    payload.target.groups = Array.from(selectedGroupIds.value)
-    payload.target.devices = Array.from(selectedDevicesIds.value)
+    payload.target.groups = Array.from(selectedGroupIds.value).filter(Boolean).sort()
+    payload.target.devices = Array.from(selectedDevicesIds.value).filter(Boolean).sort()
     payload.time = payload.time || {}
     payload.time.start = timeFromStop(startStop)
     payload.time.end = timeFromStop(endStop)
+    payload.time.days = selectedDays.value.slice().sort((a, b) => a - b)
     payload.actions = buildScenarioActions()
     const scenarioType = typeof payload.type === 'string' ? payload.type : ''
     const isAutoLightScenario = /auto-light/i.test(scenarioType)
@@ -776,6 +796,22 @@ function buildColorAction() {
     }
 }
 
+const baselineComparable = ref('')
+const currentComparable = computed(() => {
+    try {
+        return JSON.stringify(buildScenarioPayload())
+    } catch {
+        return ''
+    }
+})
+const hasUnsavedChanges = computed(
+    () => Boolean(baselineComparable.value) && currentComparable.value !== baselineComparable.value
+)
+
+function markBaseline() {
+    baselineComparable.value = currentComparable.value
+}
+
 function resetScenarioState() {
     Object.assign(scenario, createDefaultScenario())
     scenario.id = ''
@@ -793,6 +829,7 @@ function resetScenarioState() {
     editingName.value = false
     applyStopsFromScenario()
     syncSelectedDevicesFromSources(true)
+    markBaseline()
 }
 
 async function loadScenarioById(id) {
@@ -822,6 +859,7 @@ async function loadScenarioById(id) {
         applyStopsFromScenario()
         syncSelectedDevicesFromSources(true)
         editingName.value = false
+        markBaseline()
     } catch (err) {
         console.error('Failed to load scenario', err)
         scenarioError.value = err?.message || 'Не удалось загрузить сценарий'
@@ -835,19 +873,21 @@ async function saveScenario() {
     try {
         const payload = buildScenarioPayload()
         console.info('[ScenarioView] sending scenario payload', payload)
-        const response = await scenarioRequest('/save', { method: 'POST', body: { scenario: payload } })
+        const response = await scenarioRequest('/scenario/save', { method: 'POST', body: { scenario: payload } })
         if (response?.scenario) {
             Object.assign(scenario, createDefaultScenario(), response.scenario)
             normalizeScenarioStruct(scenario)
             scenario.id = response.scenario.id || scenario.id
             scenario.name = response.scenario.name || scenario.name
             captureSelectionSourcesFromScenario()
+            selectionDirty.value = false
         }
         scenarioStatus.value = scenario.disabled ? 'off' : 'running'
         applyStopsFromScenario()
         if (!selectionDirty.value) syncSelectedDevicesFromSources(false)
         scenarioMessage.value = 'Сценарий сохранен'
         editingName.value = false
+        markBaseline()
         const savedId = response?.scenario?.id || scenario.id
         if (savedId && (isCreateMode.value || routeScenarioId.value !== savedId)) {
             router.replace({ name: 'scenario-edit', params: { id: savedId } })
@@ -862,8 +902,10 @@ async function saveScenario() {
 
 async function deleteScenario() {
     if (!scenario.id) return
+    const ok = window.confirm(`Удалить сценарий "${normalizeScenarioName(scenario.name) || 'Без названия'}"?`)
+    if (!ok) return
     try {
-        await scenarioRequest('/delete', { method: 'POST', body: { id: scenario.id } })
+        await scenarioRequest('/scenario/delete', { method: 'POST', body: { id: scenario.id } })
         scenarioMessage.value = 'Сценарий удалён'
         resetScenarioState()
         router.replace({ name: 'scenarios-list' })
@@ -873,9 +915,25 @@ async function deleteScenario() {
     }
 }
 
+watch(hasUnsavedChanges, (dirty) => {
+    if (dirty) scenarioMessage.value = ''
+})
+
+onBeforeRouteLeave(() => {
+    if (!hasUnsavedChanges.value) return true
+    return window.confirm('Есть несохраненные изменения. Выйти без сохранения?')
+})
+
+function handleBeforeUnload(event) {
+    if (!hasUnsavedChanges.value) return
+    event.preventDefault()
+    event.returnValue = ''
+}
+
 onMounted(async () => {
     await loadConfig()
     loadCatalog()
+    profileStore.loadProfile().catch(() => { })
     try {
         const env = computeEnvironment({})
         envInfo.value = env
@@ -894,12 +952,28 @@ onMounted(async () => {
     timeTickerInterval = setInterval(() => {
         timeTicker.value = Date.now()
     }, 30 * 1000)
+    if (typeof window !== 'undefined') {
+        window.addEventListener('beforeunload', handleBeforeUnload)
+    }
 })
+
+watch(
+    () => presenceConfigured.value,
+    (ready) => {
+        if (!ready && presenceMode.value !== 'any') {
+            presenceMode.value = 'any'
+        }
+    },
+    { immediate: true }
+)
 
 onUnmounted(() => {
     if (timeTickerInterval) {
         clearInterval(timeTickerInterval)
         timeTickerInterval = null
+    }
+    if (typeof window !== 'undefined') {
+        window.removeEventListener('beforeunload', handleBeforeUnload)
     }
 })
 
@@ -1081,36 +1155,72 @@ const deviceSections = computed(() => {
     })
 
     const list = Array.from(sectionMap.values()).filter((section) => section.groups.length || section.devices.length)
+    list.forEach((section) => {
+        section.groups.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'))
+        section.devices.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'))
+    })
+
+    list.sort((a, b) => {
+        if (a.order !== b.order) return (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER)
+        return (a.name || '').localeCompare(b.name || '', 'ru')
+    })
+    return list
+})
+
+const prioritizedDeviceSections = computed(() => {
+    const cloned = deviceSections.value.map((section) => ({
+        ...section,
+        groups: section.groups.map((group) => ({ ...group })),
+        devices: section.devices.map((device) => ({ ...device }))
+    }))
+
     const hasSelection = (section) =>
         section.groups.some((group) => selectedGroupIds.value.has(group.id)) ||
         section.devices.some((device) => selectedDevicesIds.value.has(device.id))
 
-    list.forEach((section) => {
+    cloned.forEach((section) => {
         section.groups.sort((a, b) => {
             const aPriority = selectedGroupIds.value.has(a.id) ? 0 : 1
             const bPriority = selectedGroupIds.value.has(b.id) ? 0 : 1
             if (aPriority !== bPriority) return aPriority - bPriority
-            return a.name.localeCompare(b.name, 'ru')
+            return (a.name || '').localeCompare(b.name || '', 'ru')
         })
         section.devices.sort((a, b) => {
             const aPriority = selectedDevicesIds.value.has(a.id) ? 0 : 1
             const bPriority = selectedDevicesIds.value.has(b.id) ? 0 : 1
             if (aPriority !== bPriority) return aPriority - bPriority
-            return a.name.localeCompare(b.name, 'ru')
+            return (a.name || '').localeCompare(b.name || '', 'ru')
         })
     })
 
-    list.sort((a, b) => {
+    cloned.sort((a, b) => {
         const aPriority = hasSelection(a) ? 0 : 1
         const bPriority = hasSelection(b) ? 0 : 1
         if (aPriority !== bPriority) return aPriority - bPriority
         if (a.order !== b.order) return (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER)
-        return a.name.localeCompare(b.name, 'ru')
+        return (a.name || '').localeCompare(b.name || '', 'ru')
     })
-    return list
+    return cloned
 })
 
+const deviceSheetSections = ref(prioritizedDeviceSections.value)
+
 const activeModal = ref(null)
+const prioritizeSelectionOnNextOpen = ref(true)
+watch(
+    () => activeModal.value,
+    (next, prev) => {
+        if (next === 'devices') {
+            deviceSheetSections.value = prioritizeSelectionOnNextOpen.value
+                ? prioritizedDeviceSections.value
+                : deviceSections.value
+            prioritizeSelectionOnNextOpen.value = false
+        }
+        if (prev === 'devices') {
+            prioritizeSelectionOnNextOpen.value = true
+        }
+    }
+)
 const modalPayload = ref(null)
 
 function openModal(type, payload = null) {
@@ -1218,6 +1328,45 @@ async function handleSave() {
 async function handleDelete() {
     await deleteScenario()
 }
+
+const pausing = ref(false)
+const runtimePaused = computed(() => !!scenarioPauseInfo.value)
+
+async function toggleRuntimePause() {
+    if (!canControlRuntime.value) return
+    if (scenario.disabled || scenarioDisplayStatus.value === 'off') {
+        scenarioError.value = 'Сценарий отключен — включите его, чтобы управлять паузой'
+        return
+    }
+    if (pausing.value) return
+    pausing.value = true
+    scenarioError.value = ''
+    scenarioMessage.value = ''
+    try {
+        if (runtimePaused.value) {
+            const res = await scenarioRequest('/scenario/resume', { method: 'POST', body: { id: scenario.id } })
+            scenarioPauseInfo.value = res?.result?.pause ?? res?.pause ?? null
+            if (res?.status) scenarioStatusSummary.value = summarizeStatusRecord(res.status)
+            scenarioMessage.value = res?.result?.reason === 'manual_pause' ? 'Сценарий по-прежнему на паузе' : 'Пауза снята'
+        } else {
+            const res = await scenarioRequest('/scenario/pause', { method: 'POST', body: { id: scenario.id } })
+            scenarioPauseInfo.value =
+                res?.pause ?? res?.result?.pause ?? { setAt: Date.now(), reason: { source: 'manual' } }
+            if (res?.status) scenarioStatusSummary.value = summarizeStatusRecord(res.status)
+            scenarioMessage.value = 'Сценарий поставлен на паузу'
+        }
+    } catch (err) {
+        scenarioError.value = err?.message || 'Не удалось изменить паузу'
+    } finally {
+        pausing.value = false
+    }
+}
+
+function handleResumeFromDial() {
+    if (!canControlRuntime.value) return
+    if (!runtimePaused.value) return
+    toggleRuntimePause()
+}
 </script>
 
 <template>
@@ -1229,17 +1378,17 @@ async function handleDelete() {
                     @keyup.enter="finishEditingName" />
                 <button v-else :class="['scenario-name-display', { placeholder: !scenarioNameValue }]" type="button"
                     @click="editingName = true">
-                    {{ scenarioNameDisplay }}
+                    {{ scenarioNameUiLabel }}
                 </button>
             </div>
             <div class="status-text" :style="{ color: scenarioStatusColor }">
-                <span>{{ scenarioStatusText }}</span>
+                <span>{{ isCreateMode ? 'Новый сценарий (не сохранен)' : scenarioStatusText }}</span>
             </div>
             <div class="status-actions">
-                <button type="button" class="status-icon-btn"
-                    :title="scenarioDisplayStatus === 'paused' ? 'Возобновить' : 'Пауза'" @click="toggleScenarioPause"
-                    :disabled="scenarioDisplayStatus === 'off'">
-                    <span v-if="scenarioDisplayStatus === 'paused'">▶</span>
+                <button v-if="canControlRuntime" type="button" class="status-icon-btn"
+                    :title="runtimePaused ? 'Возобновить' : 'Пауза'" @click="toggleRuntimePause"
+                    :disabled="scenarioDisplayStatus === 'off' || pausing">
+                    <span v-if="runtimePaused">▶</span>
                     <span v-else>⏸</span>
                 </button>
                 <button type="button" class="status-icon-btn power"
@@ -1259,7 +1408,7 @@ async function handleDelete() {
                         :scenario-segment-radius="130" @update:start-stop="handleStartStopUpdate"
                         @update:end-stop="handleEndStopUpdate" @change="handleDialChange"
                         @open-start-editor="openModal('state', 'start')" @open-end-editor="openModal('state', 'end')"
-                        @resume="scenarioStatus = 'running'" />
+                        @resume="handleResumeFromDial" />
                 </div>
             </div>
             <div class="settings-column">
@@ -1279,7 +1428,9 @@ async function handleDelete() {
                     <p v-if="scenarioError" class="status-info error">{{ scenarioError }}</p>
                 </div>
 
-                <ScenarioActionsFooter class="scenario-actions-footer" @save="handleSave" @delete="handleDelete" />
+                <ScenarioActionsFooter class="scenario-actions-footer" :create-mode="isCreateMode"
+                    :can-delete="!!scenario.id" :saving="scenarioSaving" :dirty="hasUnsavedChanges" @save="handleSave"
+                    @delete="handleDelete" />
             </div>
         </div>
 
@@ -1288,7 +1439,7 @@ async function handleDelete() {
             :auto-brightness="autoBrightness" :sensor-options="sensorOptions" @close="closeModal" />
 
         <BottomSheet :open="activeModal === 'devices'" title="Выбор устройств" @close="closeModal">
-            <DeviceSelectorSheet :sections="deviceSections" :selected-ids="selectedDevicesIds"
+            <DeviceSelectorSheet :sections="deviceSheetSections" :selected-ids="selectedDevicesIds"
                 :selected-groups="selectedGroupIds" @toggle-group="handleGroupToggle"
                 @toggle-device="handleDeviceToggle" />
         </BottomSheet>
@@ -1308,7 +1459,7 @@ async function handleDelete() {
                     <span>Когда запускать</span>
                 </div>
                 <SegmentedControl aria-label="Режим присутствия" dense :model-value="presenceMode"
-                    :options="presenceOptions.map((option) => ({ value: option.id, label: option.label }))"
+                    :options="presenceOptions.map((option) => ({ value: option.id, label: option.label, disabled: option.disabled, warning: option.warning, tooltip: option.tooltip }))"
                     @update:model-value="presenceMode = $event" />
             </div>
         </BottomSheet>
@@ -1317,7 +1468,7 @@ async function handleDelete() {
 
 <style scoped>
 .scenario-dial-page {
-    padding: 24px 24px 40px;
+    padding: 24px 16px 40px;
     display: flex;
     flex-direction: column;
     gap: 18px;
@@ -1472,15 +1623,14 @@ async function handleDelete() {
 
 @media (max-width: 499px) {
     .dial-card {
-        background: transparent;
-        border: none;
-        box-shadow: none;
-        padding: 8px;
+        padding: 16px;
     }
 }
 
 .presence-inline-controls {
-    margin-top: 4px;
+    margin-top: 24px;
+    padding-top: 18px;
+    border-top: 1px solid rgba(148, 163, 184, 0.2);
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -1492,21 +1642,20 @@ async function handleDelete() {
     color: rgba(226, 232, 240, 0.85);
 }
 
+.weekday-picker p {
+    margin: 0 0 8px;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
 .presence-inline-controls :deep(.segmented) {
     width: 100%;
 }
 
 .presence-inline-controls :deep(.segmented button) {
     white-space: nowrap;
-}
-
-.presence-inline-controls :deep(.segmented button:first-child) {
-    flex: 1 1 auto;
+    flex: 1 1 0;
     min-width: 0;
-}
-
-.presence-inline-controls :deep(.segmented button:last-child) {
-    flex: 0 0 auto;
 }
 
 .settings-column {
@@ -1523,11 +1672,6 @@ async function handleDelete() {
 
 .weekday-picker {
     margin: 0;
-}
-
-.weekday-picker p {
-    margin: 0 0 8px;
-    font-weight: 600;
 }
 
 .weekday-grid {

@@ -59,16 +59,16 @@ const FACE_CENTER = 100
 const SCENARIO_SEGMENT_INSET = 4
 const DEFAULT_SEGMENT_OUTER_RADIUS = FACE_CENTER - SCENARIO_SEGMENT_INSET
 const FACE_RADIUS = DEFAULT_SEGMENT_OUTER_RADIUS
-const DIAL_FACE_MIN_GAP_PX = 36
+const DIAL_FACE_MIN_GAP_PX = 48
 const DIAL_FACE_GAP_FRACTION = 0.25
 const ARC_PADDING_PX = 5
 const TICK_EDGE_RATIO = 20
 const SUN_TIME_EDGE_RATIO = 20
-const NUMBER_RADIUS_RATIO = 3.6
+const NUMBER_RADIUS_RATIO = 3.5
 const MIN_SCENARIO_SPAN_MINUTES = 10
 const ANCHOR_SNAP_WINDOW_MINUTES = 5
 const DIAL_DAY_COLOR = 'rgba(255, 216, 170, 0.82)'
-const DIAL_NIGHT_COLOR = 'rgba(96, 165, 220, 0.62)'
+const DIAL_NIGHT_COLOR = 'rgba(93, 121, 156, 1)'
 const HANDLE_TAP_HOLD_MS = 300
 const HANDLE_TAP_MOVE_TOLERANCE = 6
 const minuteStep = 5
@@ -356,9 +356,9 @@ const hourLabels = computed(() => Array.from({ length: 12 }, (_, i) => i * 2))
 const innerTickMarks = computed(() => {
     const tickCount = 96
     const outer = TICK_OUTER_RADIUS_NORM
-    const majorInner = outer - 8
-    const hourInner = outer - 7
-    const minorInner = outer - 4
+    const majorInner = outer - 5
+    const hourInner = outer - 5
+    const minorInner = outer - 2
     return Array.from({ length: tickCount }, (_, index) => {
         const minute = (index / tickCount) * MINUTES_PER_DAY
         const angle = minuteToAngle(minute)
@@ -982,7 +982,7 @@ function minutesToTimeString(minute) {
     border-radius: 0;
     padding: 0;
     text-align: center;
-    min-height: 80px;
+    min-height: 64px;
     gap: 4px;
     display: flex;
     flex-direction: column;
@@ -1017,8 +1017,16 @@ function minutesToTimeString(minute) {
     border-radius: 50%;
     overflow: visible;
     touch-action: pan-y;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
     background: transparent;
     --dial-face-inset: 14%;
+}
+
+.dial * {
+    -webkit-tap-highlight-color: transparent;
 }
 
 .pause-overlay {

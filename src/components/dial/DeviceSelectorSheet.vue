@@ -88,7 +88,7 @@ function handleDeviceToggle(device, group, event) {
     margin: 0;
     font-weight: 600;
     color: #717884;
-    font-size: 19px;
+    font-size: 17px;
 }
 
 .group-row,
@@ -152,18 +152,18 @@ function handleDeviceToggle(device, group, event) {
 }
 
 .group-device-row span {
-    font-size: 15px;
+    font-size: 16px;
     color: #e5e7eb;
 }
 
 .device-row span {
-    font-size: 14px;
+    font-size: 15px;
     color: #e2e8f0;
 }
 
 .toggle {
-    width: 38px;
-    height: 20px;
+    width: 42px;
+    height: 24px;
     border-radius: 999px;
     border: none;
     background: rgba(148, 163, 184, 0.4);
@@ -173,26 +173,27 @@ function handleDeviceToggle(device, group, event) {
 }
 
 .toggle.small {
-    width: 30px;
-    height: 18px;
+    width: 34px;
+    height: 22px;
 }
 
 .toggle span {
     position: absolute;
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
     border-radius: 50%;
     background: white;
-    top: 2px;
+    top: 3px;
     left: 3px;
     transition: transform 0.2s;
 }
 
 .toggle.small span {
-    width: 12px;
-    height: 12px;
-    top: 3px;
+    width: 14px;
+    height: 14px;
+    top: 4px;
     left: 3px;
+    transition: transform 0.2s;
 }
 
 .toggle.active {
@@ -200,10 +201,10 @@ function handleDeviceToggle(device, group, event) {
 }
 
 .toggle.active span {
-    transform: translateX(16px);
+    transform: translateX(18px);
 }
 
 .toggle.small.toggle.active span {
-    transform: translateX(12px);
+    transform: translateX(14px);
 }
 </style>

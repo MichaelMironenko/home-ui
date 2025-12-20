@@ -120,7 +120,8 @@ function normalizeEvents(list) {
         seenIds.set(baseId, dupCount + 1)
 
         const normalizedHex = normalizeHexColor(raw?.colorHex)
-        const colorLabel = typeof raw?.colorLabel === 'string' ? raw.colorLabel : ''
+        const rawColorLabel = typeof raw?.colorLabel === 'string' ? raw.colorLabel : ''
+        const colorLabel = normalizeHexColor(rawColorLabel) ? '' : rawColorLabel
         const scenarioName = raw?.scenarioName || raw?.scenarioId || 'Без имени'
         const scenarioKey = String(raw?.scenarioId || raw?.scenarioName || scenarioName)
 
@@ -134,7 +135,7 @@ function normalizeEvents(list) {
             triggerLabel: formatTriggerLabel(raw?.origin),
             triggerIcon: formatTriggerIcon(String(raw?.origin || '')),
             brightnessDisplay: typeof raw?.brightness === 'string' ? raw.brightness.trim() : '',
-            colorLabel: colorLabel || (normalizedHex ? normalizedHex.toUpperCase() : ''),
+            colorLabel,
             colorTemperature: Number.isFinite(raw?.colorTemperature) ? Number(raw.colorTemperature) : null,
             colorHexDisplay: normalizedHex,
             sensorLux: Number.isFinite(raw?.sensorLux) ? Math.round(raw.sensorLux) : null,
@@ -318,17 +319,17 @@ async function refreshAll() {
 	                                <span class="metric-icon" aria-hidden="true">💡</span>
 	                                <span class="metric-value">{{ row.brightnessDisplay }}</span>
 	                            </span>
-                            <span v-if="row._showColorAny" class="metric metric-color">
-                                <span v-if="row.colorHexDisplay || row.colorTemperature" class="color-swatch"
-                                    :class="{ temperature: !row.colorHexDisplay }" :style="colorSwatchStyle(row)"></span>
-                                <span class="metric-value">
-                                    <template v-if="row.colorLabel">{{ row.colorLabel }}</template>
-                                    <template v-else-if="row._showCctOnly">{{ row.colorTemperature }}K</template>
-                                </span>
-                            </span>
-                            <span v-if="row.sensorLux != null" class="metric">
-                                <span class="metric-icon" aria-hidden="true">
-                                    <svg viewBox="0 0 24 24" role="presentation">
+	                            <span v-if="row._showColorAny" class="metric metric-color">
+	                                <span v-if="row.colorHexDisplay || row.colorTemperature" class="color-swatch"
+	                                    :class="{ temperature: !row.colorHexDisplay }" :style="colorSwatchStyle(row)"></span>
+	                                <span v-if="row.colorLabel || row._showCctOnly" class="metric-value">
+	                                    <template v-if="row.colorLabel">{{ row.colorLabel }}</template>
+	                                    <template v-else-if="row._showCctOnly">{{ row.colorTemperature }}K</template>
+	                                </span>
+	                            </span>
+	                            <span v-if="row.sensorLux != null" class="metric">
+	                                <span class="metric-icon" aria-hidden="true">
+	                                    <svg viewBox="0 0 24 24" role="presentation">
                                         <path
                                             d="M12 4.5a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0v-1a1 1 0 0 1 1-1Zm6.364 3.136a1 1 0 0 1 0 1.414l-.707.707a1 1 0 0 1-1.414-1.414l.707-.707a1 1 0 0 1 1.414 0ZM18.5 13a1 1 0 0 1 0 2h-1a1 1 0 1 1 0-2h1Zm-12 0a1 1 0 1 1 0 2H5.5a1 1 0 0 1 0-2h1Zm1.257-5.243a1 1 0 0 1 0 1.414l-.707.707a1 1 0 0 1-1.414-1.414l.707-.707a1 1 0 0 1 1.414 0ZM12 9a4 4 0 1 1 0 8 4 4 0 0 1 0-8Zm0 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm-1 6.5h2V20a1 1 0 1 1-2 0v-2.5Z" />
                                     </svg>

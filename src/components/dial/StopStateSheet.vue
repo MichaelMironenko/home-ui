@@ -641,219 +641,210 @@ function openCustomColorPicker() {
 <template>
     <BottomSheet :open="open" :title="sheetTitle" @close="emit('close')">
         <div class="stop-editor">
-                        <section class="control-block time-section">
+            <section class="control-block time-section">
 
 
-                            <SegmentedControl aria-label="Выбор режима времени" :model-value="timeMode"
-                                @update:model-value="selectTimeMode" :options="[
-                                    { value: 'clock', label: 'Время' },
-                                    { value: 'sunrise', label: 'Рассвет' },
-                                    { value: 'sunset', label: 'Закат' }
-                                ]" />
-                            <div v-if="timeMode === 'clock'" class="time-wheel">
-                                <div class="picker clock-picker">
-                                    <div class="highlight" aria-hidden="true" />
-                                    <div class="fadeTop" aria-hidden="true" />
-                                    <div class="fadeBottom" aria-hidden="true" />
-                                    <div class="scroller-row">
-                                        <div class="scroller" ref="hourWheelRef" @scroll="handleWheelScroll('hour')"
-                                            @pointerdown="beginWheelPointer('hour', $event)"
-                                            @pointerup="endWheelPointer('hour', $event)"
-                                            @pointercancel="endWheelPointer('hour', $event)"
-                                            @pointerleave="endWheelPointer('hour', $event)">
-                                            <button v-for="(value, index) in clockHourWheel"
-                                                :key="`hour-${index}-${value}`" type="button"
-                                                :class="['item', { active: value === clockHour }]"
-                                                @click="selectClockWheel('hour', value)">
-                                                {{ formatClockValue(value) }}
-                                            </button>
-                                        </div>
-                                        <div class="clock-separator" aria-hidden="true">:</div>
-                                        <div class="scroller" ref="minuteWheelRef" @scroll="handleWheelScroll('minute')"
-                                            @pointerdown="beginWheelPointer('minute', $event)"
-                                            @pointerup="endWheelPointer('minute', $event)"
-                                            @pointercancel="endWheelPointer('minute', $event)"
-                                            @pointerleave="endWheelPointer('minute', $event)">
-                                            <button v-for="(value, index) in clockMinuteWheel"
-                                                :key="`minute-${index}-${value}`" type="button"
-                                                :class="['item', { active: value === clockMinute }]"
-                                                @click="selectClockWheel('minute', value)">
-                                                {{ formatClockValue(value) }}
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
+                <SegmentedControl aria-label="Выбор режима времени" :model-value="timeMode"
+                    @update:model-value="selectTimeMode" :options="[
+                        { value: 'clock', label: 'Время' },
+                        { value: 'sunrise', label: 'Рассвет' },
+                        { value: 'sunset', label: 'Закат' }
+                    ]" />
+                <div v-if="timeMode === 'clock'" class="time-wheel">
+                    <div class="picker clock-picker">
+                        <div class="highlight" aria-hidden="true" />
+                        <div class="fadeTop" aria-hidden="true" />
+                        <div class="fadeBottom" aria-hidden="true" />
+                        <div class="scroller-row">
+                            <div class="scroller" ref="hourWheelRef" @scroll="handleWheelScroll('hour')"
+                                @pointerdown="beginWheelPointer('hour', $event)"
+                                @pointerup="endWheelPointer('hour', $event)"
+                                @pointercancel="endWheelPointer('hour', $event)"
+                                @pointerleave="endWheelPointer('hour', $event)">
+                                <button v-for="(value, index) in clockHourWheel" :key="`hour-${index}-${value}`"
+                                    type="button" :class="['item', { active: value === clockHour }]"
+                                    @click="selectClockWheel('hour', value)">
+                                    {{ formatClockValue(value) }}
+                                </button>
                             </div>
-                            <div v-else class="sun-wheel">
-                                <div class="picker single">
-                                    <div class="highlight" aria-hidden="true" />
-                                    <div class="fadeTop" aria-hidden="true" />
-                                    <div class="fadeBottom" aria-hidden="true" />
-                                    <div class="scroller" ref="sunWheelRef" @scroll="handleWheelScroll('sun')"
-                                        @pointerdown="beginWheelPointer('sun', $event)"
-                                        @pointerup="endWheelPointer('sun', $event)"
-                                        @pointercancel="endWheelPointer('sun', $event)"
-                                        @pointerleave="endWheelPointer('sun', $event)">
-                                        <button v-for="(value, index) in sunWheelValues" :key="`sun-${index}-${value}`"
-                                            type="button" :class="['item', { active: value === activeSunOffset }]"
-                                            @click="setSunOffsetValue(activeSunAnchor, value)">
-                                            {{ formatSunValue(value) }}
-                                        </button>
-                                    </div>
-                                </div>
+                            <div class="clock-separator" aria-hidden="true">:</div>
+                            <div class="scroller" ref="minuteWheelRef" @scroll="handleWheelScroll('minute')"
+                                @pointerdown="beginWheelPointer('minute', $event)"
+                                @pointerup="endWheelPointer('minute', $event)"
+                                @pointercancel="endWheelPointer('minute', $event)"
+                                @pointerleave="endWheelPointer('minute', $event)">
+                                <button v-for="(value, index) in clockMinuteWheel" :key="`minute-${index}-${value}`"
+                                    type="button" :class="['item', { active: value === clockMinute }]"
+                                    @click="selectClockWheel('minute', value)">
+                                    {{ formatClockValue(value) }}
+                                </button>
                             </div>
-                        </section>
+                        </div>
+                    </div>
+                </div>
+                <div v-else class="sun-wheel">
+                    <div class="picker single">
+                        <div class="highlight" aria-hidden="true" />
+                        <div class="fadeTop" aria-hidden="true" />
+                        <div class="fadeBottom" aria-hidden="true" />
+                        <div class="scroller" ref="sunWheelRef" @scroll="handleWheelScroll('sun')"
+                            @pointerdown="beginWheelPointer('sun', $event)" @pointerup="endWheelPointer('sun', $event)"
+                            @pointercancel="endWheelPointer('sun', $event)"
+                            @pointerleave="endWheelPointer('sun', $event)">
+                            <button v-for="(value, index) in sunWheelValues" :key="`sun-${index}-${value}`"
+                                type="button" :class="['item', { active: value === activeSunOffset }]"
+                                @click="setSunOffsetValue(activeSunAnchor, value)">
+                                {{ formatSunValue(value) }}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
 
-                        <section class="control-block color-section">
-                            <div class="block-header">
-                                <div class="block-title">
-                                    <h3 class="block-title-text">Цвет</h3>
-                                </div>
-                                <div v-if="isStartContext" class="header-controls">
-                                    <SegmentedControl aria-label="Режим цвета" dense fit :disabled="!isStartContext"
-                                        :model-value="colorSelection" @update:model-value="setColorSelection" :options="[
-                                            { value: 'off', label: 'Выкл' },
-                                            { value: 'temperature', label: 'Температура' },
-                                            { value: 'rgb', label: 'Цвет' }
-                                        ]" />
-                                </div>
-                            </div>
-                            <div class="color-content">
-                                <template v-if="stop.useColor">
-                                    <div v-if="stop.colorMode === 'temperature'" class="slider-block">
-                                        <label class="temperature-label">
-                                            <span class="temperature-value">{{ stop.temperature }}K</span>
-                                            <input class="gradient-range" type="range" min="1700" max="6500" step="100"
-                                                :style="{ '--range-gradient': temperatureGradient }"
-                                                :value="stop.temperature"
-                                                @input="updateTemperature($event.target.value)" />
-                                        </label>
-                                    </div>
-                                    <div v-else class="palette">
-                                        <button v-for="color in palette" :key="color" type="button" class="swatch"
-                                            :class="{ active: stop.colorHex === color }" :style="{ background: color }"
-                                            @click="stop.colorHex = color" />
-                                        <button type="button" class="swatch swatch-add" aria-label="Выбрать свой цвет"
-                                            @pointerdown.stop @click="openCustomColorPicker">
-                                            <svg viewBox="0 0 24 24" aria-hidden="true" class="swatch-add-icon">
-                                                <path
-                                                    d="M12 4a1 1 0 0 1 1 1v6h6a1 1 0 1 1 0 2h-6v6a1 1 0 1 1-2 0v-6H5a1 1 0 1 1 0-2h6V5a1 1 0 0 1 1-1Z" />
-                                            </svg>
-                                        </button>
-                                        <input ref="customColorInputRef" class="custom-color-input" type="color"
-                                            :value="stop.colorHex" @input="stop.colorHex = $event.target.value" />
-                                    </div>
-                                </template>
-                                <p v-else class="block-hint">Цвет не изменяется</p>
-                            </div>
-                        </section>
+            <section class="control-block color-section">
+                <div class="block-header">
+                    <div class="block-title">
+                        <h3 class="block-title-text">Цвет</h3>
+                    </div>
+                    <div v-if="isStartContext" class="header-controls">
+                        <SegmentedControl aria-label="Режим цвета" dense fit :disabled="!isStartContext"
+                            :model-value="colorSelection" @update:model-value="setColorSelection" :options="[
+                                { value: 'off', label: 'Выкл' },
+                                { value: 'temperature', label: 'Температура' },
+                                { value: 'rgb', label: 'Цвет' }
+                            ]" />
+                    </div>
+                </div>
+                <div class="color-content">
+                    <template v-if="stop.useColor">
+                        <div v-if="stop.colorMode === 'temperature'" class="slider-block">
+                            <label class="temperature-label">
+                                <span class="temperature-value">{{ stop.temperature }}K</span>
+                                <input class="gradient-range" type="range" min="1700" max="6500" step="100"
+                                    :style="{ '--range-gradient': temperatureGradient }" :value="stop.temperature"
+                                    @input="updateTemperature($event.target.value)" />
+                            </label>
+                        </div>
+                        <div v-else class="palette">
+                            <button v-for="color in palette" :key="color" type="button" class="swatch"
+                                :class="{ active: stop.colorHex === color }" :style="{ background: color }"
+                                @click="stop.colorHex = color" />
+                            <button type="button" class="swatch swatch-add" aria-label="Выбрать свой цвет"
+                                @pointerdown.stop @click="openCustomColorPicker">
+                                <svg viewBox="0 0 24 24" aria-hidden="true" class="swatch-add-icon">
+                                    <path
+                                        d="M12 4a1 1 0 0 1 1 1v6h6a1 1 0 1 1 0 2h-6v6a1 1 0 1 1-2 0v-6H5a1 1 0 1 1 0-2h6V5a1 1 0 0 1 1-1Z" />
+                                </svg>
+                            </button>
+                            <input ref="customColorInputRef" class="custom-color-input" type="color"
+                                :value="stop.colorHex" @input="stop.colorHex = $event.target.value" />
+                        </div>
+                    </template>
+                    <p v-else class="block-hint">Цвет не изменяется</p>
+                </div>
+            </section>
 
-                        <section class="control-block brightness-section">
-                            <div class="block-header">
-                                <div class="block-title">
-                                    <h3 class="block-title-text">Яркость</h3>
+            <section class="control-block brightness-section">
+                <div class="block-header">
+                    <div class="block-title">
+                        <h3 class="block-title-text">Яркость</h3>
+                    </div>
+                    <div v-if="isStartContext" class="header-controls">
+                        <SegmentedControl aria-label="Режим яркости" dense fit :disabled="!isStartContext"
+                            :model-value="brightnessSelection" @update:model-value="setBrightnessSelection" :options="[
+                                { value: 'off', label: 'Выкл' },
+                                { value: 'manual', label: 'Ручной' },
+                                { value: 'auto', label: 'Авто' }
+                            ]" />
+                    </div>
+                </div>
+                <div class="brightness-content">
+                    <template v-if="stop.useBrightness">
+                        <div v-if="autoMode">
+                            <template v-if="isStartContext">
+                                <label class="field">
+                                    Датчик света с улицы
+                                    <select v-model="autoBrightness.sensorId">
+                                        <option v-if="!sensorOptions.length" disabled value="">Нет датчиков
+                                        </option>
+                                        <option v-for="sensor in sensorOptions" :key="sensor.id" :value="sensor.id">
+                                            {{ sensor.name }}{{ sensor.currentLux != null ? ` (Сейчас:
+                                            ${sensor.currentLux} лк)` : '' }}
+                                        </option>
+                                    </select>
+                                </label>
+                                <div class="auto-mode-toggle">
+                                    <button type="button"
+                                        :class="['auto-mode-btn', { active: autoBrightnessViewMode === 'basic' }]"
+                                        @click="autoBrightnessViewMode = 'basic'">
+                                        Простой режим
+                                    </button>
+                                    <button type="button"
+                                        :class="['auto-mode-btn', { active: autoBrightnessViewMode === 'advanced' }]"
+                                        @click="autoBrightnessViewMode = 'advanced'">
+                                        Продвинутый
+                                    </button>
                                 </div>
-                                <div v-if="isStartContext" class="header-controls">
-                                    <SegmentedControl aria-label="Режим яркости" dense fit :disabled="!isStartContext"
-                                        :model-value="brightnessSelection" @update:model-value="setBrightnessSelection"
-                                        :options="[
-                                            { value: 'off', label: 'Выкл' },
-                                            { value: 'manual', label: 'Ручной' },
-                                            { value: 'auto', label: 'Авто' }
-                                        ]" />
-                                </div>
-                            </div>
-                            <div class="brightness-content">
-                                <template v-if="stop.useBrightness">
-                                    <div v-if="autoMode">
-                                        <template v-if="isStartContext">
-                                            <label class="field">
-                                                Датчик света с улицы
-                                                <select v-model="autoBrightness.sensorId">
-                                                    <option v-if="!sensorOptions.length" disabled value="">Нет датчиков
-                                                    </option>
-                                                    <option v-for="sensor in sensorOptions" :key="sensor.id"
-                                                        :value="sensor.id">
-                                                        {{ sensor.name }}{{ sensor.currentLux != null ? ` (Сейчас:
-                                                        ${sensor.currentLux} лк)` : '' }}
-                                                    </option>
-                                                </select>
+                                <div v-if="autoBrightnessViewMode === 'basic'" class="auto-simple">
+                                    <div class="auto-simple-line">
+                                        <span class="auto-simple-emoji">🌙</span>
+                                        <p class="auto-simple-text">
+                                            Когда темно — яркость ламп
+                                            <label>
+                                                <input type="number" min="0" max="100"
+                                                    v-model.number="simpleDarkBrightness" />
+                                                <span>%</span>
                                             </label>
-                                            <div class="auto-mode-toggle">
-                                                <button type="button"
-                                                    :class="['auto-mode-btn', { active: autoBrightnessViewMode === 'basic' }]"
-                                                    @click="autoBrightnessViewMode = 'basic'">
-                                                    Простой режим
-                                                </button>
-                                                <button type="button"
-                                                    :class="['auto-mode-btn', { active: autoBrightnessViewMode === 'advanced' }]"
-                                                    @click="autoBrightnessViewMode = 'advanced'">
-                                                    Продвинутый
-                                                </button>
-                                            </div>
-                                            <div v-if="autoBrightnessViewMode === 'basic'" class="auto-simple">
-                                                <div class="auto-simple-line">
-                                                    <span class="auto-simple-emoji">🌙</span>
-                                                    <p class="auto-simple-text">
-                                                        Когда темно — яркость ламп
-                                                        <label>
-                                                            <input type="number" min="0" max="100"
-                                                                v-model.number="simpleDarkBrightness" />
-                                                            <span>%</span>
-                                                        </label>
-                                                    </p>
-                                                </div>
-                                                <div class="auto-simple-line">
-                                                    <span class="auto-simple-emoji">☀️</span>
-                                                    <p class="auto-simple-text">
-                                                        Выключить лампы, когда на датчике больше
-                                                        <label>
-                                                            <input type="number" :min="sensorMinLimit + 1"
-                                                                :max="sensorMaxLimit" v-model.number="simpleLightLux" />
-                                                            <span>лк</span>
-                                                        </label>
-                                                    </p>
-                                                </div>
-                                            </div>
-                                            <template v-else>
-                                                <AutoBrightnessGraph :lux-min="autoBrightness.luxMin"
-                                                    :lux-max="autoBrightness.luxMax"
-                                                    :brightness-min="autoBrightness.brightnessMin"
-                                                    :brightness-max="autoBrightness.brightnessMax"
-                                                    :sensor-min-limit="sensorMinLimit"
-                                                    :sensor-max-limit="sensorMaxLimit"
-                                                    @change="handleAutoBrightnessChange" />
-                                                <p class="auto-graph-note">
-                                                    Перетащите круги: 🌙 задаёт минимум датчика и яркость в темноте, ☀️
-                                                    —
-                                                    порог
-                                                    яркого света и уровень света при нём. Подписи показывают текущие
-                                                    значения.
-                                                </p>
-                                            </template>
-                                        </template>
-                                        <p v-else class="auto-note">Автояркость по датчику. Для редактирования выберите
-                                            стартовое
-                                            состояние.
                                         </p>
                                     </div>
-
-                                    <div v-else class="slider-block">
-                                        <label>
-                                            <span class="slider-value">{{ stop.brightness }}%</span>
-                                            <input class="gradient-range" type="range" min="1" max="100"
-                                                :style="{ '--range-gradient': brightnessGradient }"
-                                                :value="stop.brightness"
-                                                @input="updateBrightness($event.target.value)" />
-                                        </label>
+                                    <div class="auto-simple-line">
+                                        <span class="auto-simple-emoji">☀️</span>
+                                        <p class="auto-simple-text">
+                                            Выключить лампы, когда на датчике больше
+                                            <label>
+                                                <input type="number" :min="sensorMinLimit + 1" :max="sensorMaxLimit"
+                                                    v-model.number="simpleLightLux" />
+                                                <span>лк</span>
+                                            </label>
+                                        </p>
                                     </div>
+                                </div>
+                                <template v-else>
+                                    <AutoBrightnessGraph :lux-min="autoBrightness.luxMin"
+                                        :lux-max="autoBrightness.luxMax" :brightness-min="autoBrightness.brightnessMin"
+                                        :brightness-max="autoBrightness.brightnessMax"
+                                        :sensor-min-limit="sensorMinLimit" :sensor-max-limit="sensorMaxLimit"
+                                        @change="handleAutoBrightnessChange" />
+                                    <p class="auto-graph-note">
+                                        Перетащите круги: 🌙 задаёт минимум датчика и яркость в темноте, ☀️
+                                        —
+                                        порог
+                                        яркого света и уровень света при нём. Подписи показывают текущие
+                                        значения.
+                                    </p>
                                 </template>
-                                <p v-else class="block-hint">Яркость не изменяется</p>
-                            </div>
-                        </section>
-                        <p v-if="!isStartContext" class="mode-note">
-                            Выбрать другой режим изменения цвета и яркости можно в настройках стартового состояния.
-                        </p>
+                            </template>
+                            <p v-else class="auto-note">Автояркость по датчику. Для редактирования выберите
+                                стартовое
+                                состояние.
+                            </p>
+                        </div>
+
+                        <div v-else class="slider-block">
+                            <label>
+                                <span class="slider-value">{{ stop.brightness }}%</span>
+                                <input class="gradient-range" type="range" min="1" max="100"
+                                    :style="{ '--range-gradient': brightnessGradient }" :value="stop.brightness"
+                                    @input="updateBrightness($event.target.value)" />
+                            </label>
+                        </div>
+                    </template>
+                    <p v-else class="block-hint">Яркость не изменяется</p>
+                </div>
+            </section>
+            <p v-if="!isStartContext" class="mode-note">
+                Выбрать другой режим изменения цвета и яркости можно в настройках стартового состояния.
+            </p>
         </div>
     </BottomSheet>
 </template>
@@ -873,7 +864,8 @@ function openCustomColorPicker() {
 }
 
 .control-block+.control-block {
-    margin-top: 6px;
+    padding-top: 18px;
+    border-top: 1px solid rgba(148, 163, 184, 0.2);
 }
 
 

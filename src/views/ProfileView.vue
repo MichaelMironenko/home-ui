@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useProfile } from '../composables/useProfile'
 import { useAuth } from '../composables/useAuth'
 import { setDocumentDescription, setDocumentTitle } from '../utils/pageTitle'
+import SegmentedControl from '../components/dial/SegmentedControl.vue'
 
 const profileStore = useProfile()
 const auth = useAuth()
@@ -18,6 +19,26 @@ const savedCityName = computed(() => profileData.value?.city?.name || '')
 const cityRequired = computed(() => route.query.cityRequired === '1' && !savedCityName.value)
 const cityDetectionLoading = computed(() => !!profileStore.cityDetectionLoading.value)
 const profileLoadError = computed(() => profileStore.profileError.value)
+const displayName = computed(() => profileData.value?.displayName || '')
+const presenceSeen = computed(() => profileData.value?.presenceSeen || { home: false, away: false })
+const presenceHomeReady = computed(() => presenceSeen.value?.home === true)
+const presenceAwayReady = computed(() => presenceSeen.value?.away === true)
+const presenceStatusLabel = (ready) => ready ? 'работает' : 'ожидание'
+const presenceApiTokenCreatedAt = computed(() => profileData.value?.presenceApiTokenCreatedAt || null)
+const issuedPresenceToken = ref('')
+const issuingPresenceToken = ref(false)
+const presenceTokenError = ref('')
+const presencePlatform = ref('ios')
+const presencePlatformOptions = [
+    { value: 'ios', label: 'iPhone (Shortcuts)' },
+    { value: 'android', label: 'Android (Tasker)' }
+]
+
+const presenceEndpoint = computed(() => instructions.value?.endpoint || '/api/presence')
+const presenceAuthHeader = computed(() => {
+    const token = issuedPresenceToken.value?.trim()
+    return token ? `Authorization: Bearer ${token}` : 'Authorization: Bearer <token>'
+})
 
 const cityQuery = ref('')
 const selectedCity = ref(null)
@@ -26,9 +47,12 @@ const suggestionsLoading = ref(false)
 const suggestionsError = ref('')
 const detectionMessage = ref('')
 const statusMessage = ref('')
+const savedCityNotice = ref('')
 const geoError = ref('')
 const geoInFlight = ref(false)
 const logoutRunning = ref(false)
+const deletingProfile = ref(false)
+const userTypingCity = ref(false)
 
 const cityInputHint = 'Можно ввести вручную и нажать «Сохранить город».'
 
@@ -50,8 +74,11 @@ function browserTimezone() {
 function syncCityFromProfile(city) {
     if (city?.name) {
         selectedCity.value = city
+        userTypingCity.value = false
         cityQuery.value = city.name
         detectionMessage.value = ''
+        manualSuggestions.value = []
+        suggestionsError.value = ''
     }
 }
 
@@ -69,7 +96,10 @@ async function saveCity(city) {
     try {
         await profileStore.updateCity(city)
         statusMessage.value = `Выбран город ${city.name || cityQuery.value}`
+        savedCityNotice.value = `Сохранён: ${city.name || cityQuery.value}`
         manualSuggestions.value = []
+        suggestionsError.value = ''
+        userTypingCity.value = false
         selectedCity.value = city
         clearCityRequiredQuery()
     } catch (err) {
@@ -113,7 +143,10 @@ async function tryGeolocation(fromAuto = false) {
         if (data?.city) {
             const city = data.city
             selectedCity.value = city
+            userTypingCity.value = false
             cityQuery.value = city.name || cityQuery.value
+            manualSuggestions.value = []
+            suggestionsError.value = ''
             await saveCity(city)
             detectionMessage.value = ''
             return city
@@ -150,7 +183,10 @@ async function runDetection(autoApply = false) {
         if (!detection) return
         if (detection.status === 'confirm_ip_city' && detection.city) {
             selectedCity.value = detection.city
+            userTypingCity.value = false
             cityQuery.value = detection.city.name || cityQuery.value
+            manualSuggestions.value = []
+            suggestionsError.value = ''
             if (autoApply) {
                 await saveCity(detection.city)
             } else {
@@ -184,6 +220,25 @@ async function runDetection(autoApply = false) {
     }
 }
 
+async function handleIssuePresenceToken() {
+    if (issuingPresenceToken.value) return
+    issuingPresenceToken.value = true
+    presenceTokenError.value = ''
+    issuedPresenceToken.value = ''
+    try {
+        const data = await profileStore.issuePresenceToken()
+        issuedPresenceToken.value = data?.token || ''
+        await profileStore.loadProfile(true).catch(() => { })
+        if (issuedPresenceToken.value && navigator?.clipboard?.writeText) {
+            await navigator.clipboard.writeText(issuedPresenceToken.value).catch(() => { })
+        }
+    } catch (err) {
+        presenceTokenError.value = err?.message || 'Не удалось сгенерировать токен'
+    } finally {
+        issuingPresenceToken.value = false
+    }
+}
+
 async function saveCityFromInput() {
     const name = cityQuery.value.trim()
     if (!name) {
@@ -214,9 +269,20 @@ async function saveCityFromInput() {
 function selectSuggestion(option) {
     if (!option) return
     selectedCity.value = option
+    userTypingCity.value = false
     cityQuery.value = option.name
     statusMessage.value = ''
     manualSuggestions.value = []
+    savedCityNotice.value = ''
+}
+
+function handleCityInput() {
+    userTypingCity.value = true
+    savedCityNotice.value = ''
+    if (hideSuggestionsTimer) {
+        clearTimeout(hideSuggestionsTimer)
+        hideSuggestionsTimer = null
+    }
 }
 
 function handleCityInputFocus() {
@@ -231,6 +297,7 @@ function handleCityInputBlur() {
         clearTimeout(hideSuggestionsTimer)
     }
     hideSuggestionsTimer = setTimeout(() => {
+        userTypingCity.value = false
         manualSuggestions.value = []
         hideSuggestionsTimer = null
     }, 120)
@@ -254,6 +321,11 @@ watch(cityQuery, (value, _old, onCleanup) => {
     }
     if (selectedCity.value && selectedCity.value.name !== trimmed) {
         selectedCity.value = null
+    }
+    if (!userTypingCity.value) {
+        manualSuggestions.value = []
+        suggestionsError.value = ''
+        return
     }
     if (trimmed.length < 2) {
         manualSuggestions.value = []
@@ -321,8 +393,26 @@ async function handleLogout() {
     logoutRunning.value = true
     try {
         await auth.logout()
+        router.replace({ name: 'login' })
     } finally {
         logoutRunning.value = false
+    }
+}
+
+async function handleDeleteProfile() {
+    if (!window.confirm('Вы уверены, что хотите удалить профиль? Это действие необратимо.')) {
+        return
+    }
+    deletingProfile.value = true
+    try {
+        await profileStore.deleteProfile()
+        await auth.logout()
+        router.replace({ name: 'login' })
+    } catch (err) {
+        statusMessage.value = err?.message || 'Не удалось удалить профиль'
+        console.warn('[profile] deleteProfile failed', err)
+    } finally {
+        deletingProfile.value = false
     }
 }
 </script>
@@ -332,6 +422,7 @@ async function handleLogout() {
         <header class="profile-header">
             <div>
                 <h1>Профиль</h1>
+                <p class="profile-name" v-if="displayName">{{ displayName }}</p>
                 <p class="profile-email">{{ profileData?.email || auth.user.value?.email || '—' }}</p>
             </div>
         </header>
@@ -346,30 +437,33 @@ async function handleLogout() {
             </p>
 
             <div class="city-search-block">
-                <div class="city-input-wrapper">
-                    <input id="city-search" type="text" v-model="cityQuery" placeholder="Введите название города"
-                        autocomplete="off" @focus="handleCityInputFocus" @blur="handleCityInputBlur">
-                    <div v-if="showSuggestions" class="city-suggestions">
-                        <button v-for="option in manualSuggestions" :key="`${option.name}-${option.lat}-${option.lon}`"
-                            type="button" class="suggestion-item" @click="selectSuggestion(option)">
-                            <span class="suggestion-line">
-                                {{ option.name }}
-                                <span v-if="option.region || option.country || option.countryCode"
-                                    class="suggestion-region">
-                                    — {{ option.region || option.country || option.countryCode }}
+                <div class="city-input-row">
+                    <div class="city-input-wrapper">
+                        <input id="city-search" type="text" v-model="cityQuery" placeholder="Введите название города"
+                            autocomplete="off" @input="handleCityInput" @focus="handleCityInputFocus"
+                            @blur="handleCityInputBlur">
+                        <div v-if="showSuggestions" class="city-suggestions">
+                            <button v-for="option in manualSuggestions" :key="`${option.name}-${option.lat}-${option.lon}`"
+                                type="button" class="suggestion-item" @click="selectSuggestion(option)">
+                                <span class="suggestion-line">
+                                    {{ option.name }}
+                                    <span v-if="option.region || option.country || option.countryCode"
+                                        class="suggestion-region">
+                                        — {{ option.region || option.country || option.countryCode }}
+                                    </span>
                                 </span>
-                            </span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="city-actions">
+                        <button type="button" class="apply-btn" @click="saveCityFromInput">
+                            Сохранить
                         </button>
                     </div>
                 </div>
                 <p class="muted small">
-                    {{ savedCityName ? `Сохранён: ${savedCityName}` : cityInputHint }}
+                    {{ savedCityNotice || cityInputHint }}
                 </p>
-                <div class="city-actions">
-                    <button type="button" class="apply-btn" @click="saveCityFromInput">
-                        Сохранить город
-                    </button>
-                </div>
             </div>
 
             <p v-if="cityDetectionLoading" class="muted small">Определяем город автоматически…</p>
@@ -385,29 +479,120 @@ async function handleLogout() {
         <section v-if="instructions" class="panel instructions-panel">
             <div class="panel-heading">
                 <h2>Настройка присутствия</h2>
-                <p>Скопируйте указанные настройки в Shortcuts (iOS) или Tasker (Android).</p>
+                <p>Позволяет запускать сценарии только когда кто-то дома и выключать свет, когда ушли все.</p>
             </div>
-            <div class="instruction-grid">
-                <div>
-                    <p class="label">Endpoint</p>
-                    <code>{{ instructions.endpoint }}</code>
-                </div>
-                <div v-if="instructions.secret">
-                    <p class="label">Секрет</p>
-                    <code>{{ instructions.secret }}</code>
-                </div>
-                <div v-else>
-                    <p class="label">Секрет</p>
-                    <span>Секрет не задан на сервере</span>
-                </div>
+            <div class="presence-platform">
+                <SegmentedControl aria-label="Платформа" :model-value="presencePlatform"
+                    :options="presencePlatformOptions" @update:model-value="presencePlatform = $event" />
             </div>
             <div class="instruction-block">
-                <h3>iOS Shortcuts</h3>
-                <p>{{ instructions.ios }}</p>
+                <h3 v-if="presencePlatform === 'ios'">iPhone: настройка Shortcuts</h3>
+                <h3 v-else>Android: настройка Tasker</h3>
+
+                <ol class="presence-steps">
+                    <li>
+                        <div class="presence-step-title">Шаг 1. Сгенерируйте персональный токен</div>
+                        <div class="presence-step-body">
+                            <button type="button" class="apply-btn small" @click="handleIssuePresenceToken"
+                                :disabled="issuingPresenceToken">
+                                {{ issuingPresenceToken ? 'Генерируем…' : (presenceApiTokenCreatedAt ? 'Сбросить токен' : 'Сгенерировать токен') }}
+                            </button>
+                            <p v-if="presenceApiTokenCreatedAt" class="muted small">
+                                Токен уже сгенерирован. Чтобы увидеть новый токен, нажмите «Сбросить токен».
+                            </p>
+                            <p v-if="issuedPresenceToken" class="muted small">
+                                Новый токен (покажем один раз): <code class="token">{{ issuedPresenceToken }}</code>
+                            </p>
+                            <p v-if="presenceTokenError" class="error-message">{{ presenceTokenError }}</p>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="presence-step-title">Шаг 2. Подготовьте два запроса: Home и Away</div>
+                        <div class="presence-step-body">
+                            <p class="muted small">
+                                В каждом запросе обязательно укажите <code>device</code> — любое понятное имя телефона/члена семьи (например <code>Misha</code>, <code>Katya</code>).
+                                Так сервер сможет учитывать несколько устройств и правильно считать <code>anyoneHome</code>.
+                            </p>
+                            <div class="presence-kv">
+                                <div class="label">URL</div>
+                                <code>{{ presenceEndpoint }}</code>
+                            </div>
+                            <div class="presence-kv">
+                                <div class="label">Header</div>
+                                <code>{{ presenceAuthHeader }}</code>
+                            </div>
+                            <div class="presence-kv">
+                                <div class="label">JSON (Home)</div>
+                                <pre class="presence-snippet"><code>{
+  "device": "Misha",
+  "status": "home"
+}</code></pre>
+                            </div>
+                            <div class="presence-kv">
+                                <div class="label">JSON (Away)</div>
+                                <pre class="presence-snippet"><code>{
+  "device": "Misha",
+  "status": "away"
+}</code></pre>
+                            </div>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="presence-step-title">Шаг 3. Настройте автоматизации</div>
+                        <div class="presence-step-body" v-if="presencePlatform === 'ios'">
+                            <ol class="presence-substeps">
+                                <li>Откройте приложение <b>Команды</b> (Shortcuts).</li>
+                                <li>Перейдите на вкладку <b>Автоматизация</b>.</li>
+                                <li>Нажмите <b>+</b> → <b>Создать автоматизацию</b> → <b>Прибытие</b>.</li>
+                                <li>Выберите дом/адрес и действие <b>Прибыл</b>, нажмите <b>Далее</b>.</li>
+                                <li>Нажмите <b>Добавить действие</b> → найдите <b>Получить содержимое URL</b>.</li>
+                                <li>В действии выставьте:
+                                    <div class="presence-subkv"><span>Метод:</span> <code>POST</code></div>
+                                    <div class="presence-subkv"><span>URL:</span> <code>{{ presenceEndpoint }}</code></div>
+                                    <div class="presence-subkv"><span>Заголовок:</span> <code>{{ presenceAuthHeader }}</code></div>
+                                    <div class="presence-subkv"><span>Тело:</span> <code>JSON</code> и вставьте Home JSON из шага 2</div>
+                                </li>
+                                <li>Сохраните автоматизацию и включите “Выполнять немедленно” (если есть).</li>
+                                <li>Повторите шаги 3–6 для автоматизации <b>Уход</b> и используйте Away JSON.</li>
+                            </ol>
+                        </div>
+                        <div class="presence-step-body" v-else>
+                            <ol class="presence-substeps">
+                                <li>Откройте <b>Tasker</b> → вкладка <b>Profiles</b> → нажмите <b>+</b>.</li>
+                                <li>Выберите триггер геозоны (Location / Geofence) “Дом” → <b>Enter</b> (вход).</li>
+                                <li>Создайте <b>Task</b> → добавьте действие <b>Net → HTTP Request</b>.</li>
+                                <li>Заполните:
+                                    <div class="presence-subkv"><span>Method:</span> <code>POST</code></div>
+                                    <div class="presence-subkv"><span>URL:</span> <code>{{ presenceEndpoint }}</code></div>
+                                    <div class="presence-subkv"><span>Headers:</span> <code>{{ presenceAuthHeader }}</code></div>
+                                    <div class="presence-subkv"><span>Body (JSON):</span> вставьте Home JSON из шага 2</div>
+                                    <div class="presence-subkv"><span>Content-Type:</span> <code>application/json</code></div>
+                                </li>
+                                <li>Сохраните. Повторите для <b>Exit</b> (выход) и используйте Away JSON.</li>
+                            </ol>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="presence-step-title">Шаг 4. Проверьте работу</div>
+                        <div class="presence-step-body">
+                            Запустите один раз Home и Away (вручную или через тестовую автоматизацию) и убедитесь, что ниже оба статуса стали «работает».
+                        </div>
+                    </li>
+                </ol>
             </div>
-            <div class="instruction-block">
-                <h3>Android (Tasker / Routine)</h3>
-                <p>{{ instructions.android }}</p>
+
+            <div class="presence-status">
+                <div class="presence-status-row">
+                    <span class="label">Home</span>
+                    <span class="presence-pill" :class="{ ok: presenceHomeReady }">{{ presenceStatusLabel(presenceHomeReady) }}</span>
+                </div>
+                <div class="presence-status-row">
+                    <span class="label">Away</span>
+                    <span class="presence-pill" :class="{ ok: presenceAwayReady }">{{ presenceStatusLabel(presenceAwayReady) }}</span>
+                </div>
+                <p v-if="!presenceHomeReady || !presenceAwayReady" class="muted small">
+                    Для включения сценариев по присутствию нужно, чтобы сервер получил хотя бы один раз обе команды: <code>home</code> и <code>away</code>.
+                </p>
             </div>
         </section>
 
@@ -418,6 +603,10 @@ async function handleLogout() {
         <footer class="profile-footer">
             <button type="button" class="primary-outline-button" @click="handleLogout" :disabled="logoutRunning">
                 {{ logoutRunning ? 'Выходим…' : 'Выйти' }}
+            </button>
+            <button type="button" class="danger-outline-button" @click="handleDeleteProfile"
+                :disabled="deletingProfile || logoutRunning">
+                {{ deletingProfile ? 'Удаляем…' : 'Удалить профиль' }}
             </button>
         </footer>
 
@@ -433,6 +622,7 @@ async function handleLogout() {
 }
 
 .profile-header {
+    margin: 0;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -440,18 +630,121 @@ async function handleLogout() {
     flex-wrap: wrap;
 }
 
+.profile-header h1 {
+    margin: 0;
+}
+
+.profile-name {
+    margin: 4px 0 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-subtle);
+}
+
+.presence-platform {
+    margin: 10px 0 12px;
+    display: flex;
+    justify-content: flex-start;
+}
+
+.presence-pill {
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    color: rgba(226, 232, 240, 0.92);
+    background: rgba(148, 163, 184, 0.14);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.presence-pill.ok {
+    background: rgba(34, 197, 94, 0.16);
+    border-color: rgba(34, 197, 94, 0.35);
+}
+
+.apply-btn.small {
+    padding: 8px 12px;
+    font-size: 13px;
+}
+
+code.token {
+    user-select: all;
+}
+
+.presence-steps {
+    margin: 10px 0 0;
+    padding-left: 18px;
+    display: grid;
+    gap: 10px;
+}
+
+.presence-step-title {
+    font-weight: 700;
+}
+
+.presence-step-body {
+    margin-top: 6px;
+    display: grid;
+    gap: 8px;
+}
+
+.presence-kv {
+    display: grid;
+    gap: 6px;
+}
+
+.presence-substeps {
+    margin: 6px 0 0;
+    padding-left: 18px;
+    display: grid;
+    gap: 8px;
+}
+
+.presence-subkv {
+    display: grid;
+    gap: 4px;
+    margin-top: 6px;
+}
+
+.presence-snippet {
+    margin: 8px 0 0;
+    padding: 10px 12px;
+    background: rgba(2, 6, 23, 0.7);
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 12px;
+    overflow: auto;
+    font-size: 12px;
+}
+
+.presence-status {
+    display: grid;
+    gap: 8px;
+    margin: 12px 0 0;
+    padding: 12px;
+    border-radius: 14px;
+    background: rgba(15, 23, 42, 0.35);
+    border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.presence-status-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
 
 .city-panel .label {
     margin: 0;
     font-size: 13px;
-    color: #94a3b8;
+    color: var(--text-muted);
 }
 
 .panel {
-    background: #0f172a;
-    border-radius: 20px;
-    border: 1px solid #1f2937;
-    padding: 22px;
+    background: var(--surface-card);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--surface-border);
+    padding: 16px;
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -462,13 +755,34 @@ async function handleLogout() {
 }
 
 .profile-email {
-    font-size: 14px;
+    font-size: 16px;
     color: var(--text-muted);
 }
 
 .profile-footer {
     display: flex;
     justify-content: flex-start;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.danger-outline-button {
+    background: transparent;
+    border: 1px solid var(--danger);
+    color: var(--danger);
+    border-radius: 999px;
+    padding: 6px 14px;
+    cursor: pointer;
+    transition: background var(--transition-base);
+}
+
+.danger-outline-button:hover:not(:disabled) {
+    background: var(--danger-soft);
+}
+
+.danger-outline-button:disabled {
+    opacity: 0.5;
+    cursor: default;
 }
 
 .panel-heading h2 {
@@ -478,9 +792,21 @@ async function handleLogout() {
 
 .panel-heading p {
     margin: 4px 0 0;
-    color: #94a3b8;
+    color: var(--text-muted);
 }
 
+.panel-heading .hint {
+    font-size: 13px;
+    margin: 4px 0 0;
+    color: var(--text-muted);
+}
+
+
+.city-input-row {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
 
 .city-search-block label {
     display: block;
@@ -496,14 +822,15 @@ async function handleLogout() {
     width: 100%;
     padding: 12px 16px;
     border-radius: 14px;
-    border: 1px solid #374151;
-    background: #1f2937;
-    color: #f8fafc;
+    border: 1px solid var(--surface-border);
+    background: var(--surface-muted);
+    color: var(--text-primary);
     font-size: 14px;
 }
 
 .city-actions {
-    margin-top: 12px;
+    display: flex;
+    justify-content: flex-end;
 }
 
 .city-suggestions {
@@ -511,9 +838,9 @@ async function handleLogout() {
     left: 0;
     right: 0;
     top: calc(100% + 6px);
-    border: 1px solid #334155;
+    border: 1px solid var(--surface-border-strong);
     border-radius: 12px;
-    background: #0b1120;
+    background: var(--surface-card);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -531,7 +858,7 @@ async function handleLogout() {
     display: flex;
     flex-direction: column;
     gap: 2px;
-    color: #f8fafc;
+    color: var(--text-primary);
     cursor: pointer;
 }
 
@@ -569,6 +896,10 @@ async function handleLogout() {
 .apply-btn:disabled {
     opacity: 0.6;
     cursor: default;
+}
+
+.city-actions .apply-btn {
+    width: 100%;
 }
 
 .row-buttons {
@@ -609,7 +940,7 @@ async function handleLogout() {
 }
 
 .muted {
-    color: #475569;
+    color: var(--text-muted);
     margin: 0;
 }
 
@@ -635,34 +966,35 @@ async function handleLogout() {
 .instruction-grid .label {
     font-size: 12px;
     text-transform: uppercase;
-    color: #64748b;
+    color: var(--text-muted);
     margin-bottom: 4px;
 }
 
 .instruction-grid code {
     display: block;
-    background: #0f172a;
-    color: #f8fafc;
+    background: var(--surface-card);
+    color: var(--text-primary);
     border-radius: 10px;
     padding: 6px 10px;
     font-size: 14px;
 }
 
 .instruction-block {
-    background: #f8fafc;
-    border-radius: 14px;
+    background: var(--surface-muted);
+    border-radius: var(--radius-lg);
     padding: 12px 14px;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--surface-border);
 }
 
 .instruction-block h3 {
     margin: 0;
     font-size: 16px;
+    color: var(--text-primary);
 }
 
 .instruction-block p {
     margin: 6px 0 0;
-    color: #0f172a;
+    color: var(--text-subtle);
 }
 
 .note {
@@ -691,6 +1023,21 @@ async function handleLogout() {
 
     .instruction-grid {
         grid-template-columns: 1fr;
+    }
+}
+
+@media (min-width: 431px) {
+    .city-input-row {
+        flex-direction: row;
+        align-items: flex-end;
+    }
+
+    .city-input-wrapper {
+        flex: 1;
+    }
+
+    .city-actions .apply-btn {
+        width: auto;
     }
 }
 </style>
