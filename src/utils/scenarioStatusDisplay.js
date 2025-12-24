@@ -2,14 +2,16 @@ const MINUTE_MS = 60 * 1000
 const HOUR_MS = 60 * MINUTE_MS
 
 const PAUSE_REASON_LABELS = {
-    manual: 'Ручная коррекция',
-    manual_pause: 'Ручная коррекция',
-    manual_override: 'Ручная коррекция',
-    scheduled: 'Ручная коррекция',
+    manual_override: 'Свет изменен вручную',
+    manual_adjust: 'Свет изменен вручную',
+    manual_change: 'Свет изменен вручную',
+    manual_control: 'Свет изменен вручную',
     presence: 'Никого нет дома',
     presence_guard: 'Никого нет дома',
     away: 'Никого нет дома'
 }
+
+const PAUSE_MANUAL_SOURCES = new Set(['manual', 'manual_pause'])
 
 const CURRENT_WINDOW_KEYS = ['window', 'currentWindow', 'activeWindow']
 const NEXT_WINDOW_KEYS = ['nextWindow', 'upcomingWindow', 'next']
@@ -91,7 +93,7 @@ export function deriveScenarioListStatus(item, nowInput = Date.now()) {
     if (item.disabled) return buildStatus('off', 'Выключен')
     if (item.pause) {
         const reason = resolvePauseReason(item.pause, item.status)
-        const label = reason ? `Пауза · ${reason}` : 'Пауза'
+        const label = reason ? `Пауза | ${reason}` : 'Пауза'
         return buildStatus('paused', label)
     }
     const status = item.status
@@ -197,11 +199,13 @@ function formatTime(timestamp, tz) {
 
 function resolvePauseReason(pause, status) {
     const pauseReason = pause?.reason
-    if (pauseReason?.label) return pauseReason.label
     const source = pauseReason?.source || status?.result?.reason
-    if (source && PAUSE_REASON_LABELS[source]) return PAUSE_REASON_LABELS[source]
-    if (source && source.toLowerCase().includes('presence')) return PAUSE_REASON_LABELS.presence
-    return PAUSE_REASON_LABELS.manual
+    const normalized = source ? String(source).toLowerCase() : ''
+    if (PAUSE_MANUAL_SOURCES.has(normalized)) return ''
+    if (normalized && PAUSE_REASON_LABELS[normalized]) return PAUSE_REASON_LABELS[normalized]
+    if (normalized && normalized.includes('presence')) return PAUSE_REASON_LABELS.presence
+    if (pauseReason?.label) return pauseReason.label
+    return ''
 }
 
 function findWindow(result, keys) {

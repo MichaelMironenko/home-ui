@@ -31,3 +31,16 @@ onMounted(async () => {
         <p v-else class="text-dimmed">Загрузка списка устройств…</p>
     </main>
 </template>
+
+<style scoped>
+.page-shell {
+    padding: 24px 16px 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.text-dimmed {
+    color: var(--text-muted);
+}
+</style>

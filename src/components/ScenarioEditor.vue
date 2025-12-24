@@ -88,7 +88,7 @@ function statusReasonText(result) {
     if (!result) return ''
     if (result.error) return result.error
     if (result.active) return 'Активен'
-    if (result.reason === 'manual_pause') return 'На паузе'
+    if (result.reason === 'manual_pause' || result.reason === 'autopause') return 'На паузе'
     if (result.reason === 'presence_guard') return 'Заблокирован по присутствию'
     if (result.reason === 'disabled') return 'Отключен'
     if (result.reason) return result.reason
@@ -1261,7 +1261,14 @@ async function handleSave() {
             applyScenarioPayload(res.scenario, nextPause, nextStatus)
             pauseInfo.value = nextPause
             statusInfo.value = nextStatus
-            if (res?.status?.result?.reason === 'manual_pause' || res?.trigger?.result?.reason === 'manual_pause') {
+            const statusReason = res?.status?.result?.reason
+            const triggerReason = res?.trigger?.result?.reason
+            if (
+                statusReason === 'manual_pause' ||
+                statusReason === 'autopause' ||
+                triggerReason === 'manual_pause' ||
+                triggerReason === 'autopause'
+            ) {
                 message.value = 'Сценарий сохранён, но находится на паузе'
             }
         } else {
@@ -1304,7 +1311,7 @@ async function handleRun() {
                 origin: 'manual',
                 result: res.result
             }
-            if (reason === 'manual_pause') {
+            if (reason === 'manual_pause' || reason === 'autopause') {
                 message.value = 'Сценарий на паузе'
             } else if (reason === 'presence_guard') {
                 message.value = 'Сценарий заблокирован по присутствию'
@@ -1399,7 +1406,7 @@ async function handleTogglePause() {
         } else {
             pauseInfo.value = res?.result?.pause || null
             statusInfo.value = res?.status || (res?.result ? { ts: Date.now(), origin: 'resume', result: res.result } : null)
-            if (res?.result?.reason === 'manual_pause') {
+            if (res?.result?.reason === 'manual_pause' || res?.result?.reason === 'autopause') {
                 message.value = 'Сценарий по-прежнему на паузе'
             } else if (res?.result?.reason === 'presence_guard') {
                 message.value = 'Сценарий заблокирован по присутствию'

@@ -759,6 +759,20 @@ code.token {
     color: var(--text-muted);
 }
 
+.primary-outline-button {
+    background: transparent;
+    border: 1px solid var(--primary);
+    color: var(--primary);
+    border-radius: 999px;
+    padding: 6px 14px;
+    cursor: pointer;
+    transition: background var(--transition-base);
+}
+
+.primary-outline-button:hover:not(:disabled) {
+    background: rgba(168, 85, 247, 0.12);
+}
+
 .profile-footer {
     display: flex;
     justify-content: flex-start;

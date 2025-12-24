@@ -2,18 +2,20 @@ import { createApp } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import './style.css'
 import App from './App.vue'
-import CapabilitiesView from './views/CapabilitiesView.vue'
-import HomeView from './views/HomeView.vue'
-import ScenariosListView from './views/ScenariosListView.vue'
-import ScenarioView from './views/ScenarioView.vue'
-import ScenarioLegacyView from './views/ScenarioLegacyView.vue'
-import AutoLightScenarioView from './views/AutoLightScenarioView.vue'
-import EventsView from './views/EventsView.vue'
-import NotFoundView from './views/NotFoundView.vue'
-import LoginView from './views/LoginView.vue'
-import ProfileView from './views/ProfileView.vue'
 import { useAuth } from './composables/useAuth'
 import { useProfile } from './composables/useProfile'
+
+const CapabilitiesView = () => import('./views/CapabilitiesView.vue')
+const HomeView = () => import('./views/HomeView.vue')
+const ScenariosListView = () => import('./views/ScenariosListView.vue')
+const ScenarioView = () => import('./views/ScenarioView.vue')
+const ScenarioLegacyView = () => import('./views/ScenarioLegacyView.vue')
+const AutoLightScenarioView = () => import('./views/AutoLightScenarioView.vue')
+const EventsView = () => import('./views/EventsView.vue')
+const NotFoundView = () => import('./views/NotFoundView.vue')
+const LoginView = () => import('./views/LoginView.vue')
+const ConsentView = () => import('./views/ConsentView.vue')
+const ProfileView = () => import('./views/ProfileView.vue')
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -29,6 +31,7 @@ const router = createRouter({
     { path: '/auto-light/:id', name: 'auto-light-edit', component: AutoLightScenarioView, props: true },
     { path: '/profile', name: 'profile', component: ProfileView },
     { path: '/events', name: 'events', component: EventsView },
+    { path: '/consent', name: 'consent', component: ConsentView, meta: { public: true } },
     { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
     { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFoundView }
   ]
@@ -36,9 +39,10 @@ const router = createRouter({
 
 const auth = useAuth()
 const profileStore = useProfile()
+let profileLoadPromise = null
 
 router.beforeEach(async (to, from, next) => {
-  const isPublic = to.meta?.public === true
+  const isPublic = to.matched.some(record => record.meta?.public === true)
   try {
     await auth.ensureSession()
   } catch (err) {
@@ -49,19 +53,6 @@ router.beforeEach(async (to, from, next) => {
     const redirectPath = typeof to.fullPath === 'string' ? to.fullPath : '/'
     next({ name: 'login', query: { redirect: redirectPath } })
     return
-  }
-
-  if (auth.user.value) {
-    try {
-      await profileStore.loadProfile()
-    } catch (err) {
-      console.warn('[profile] guard load failed', err)
-    }
-    const profileData = profileStore.profile.value
-    if (!profileData?.city && to.name !== 'profile' && !isPublic) {
-      next({ name: 'profile', query: { cityRequired: '1' } })
-      return
-    }
   }
 
   if (auth.user.value && to.name === 'login') {
@@ -75,6 +66,41 @@ router.beforeEach(async (to, from, next) => {
   }
 
   next()
+})
+
+async function ensureProfileForCity() {
+  if (!auth.user.value) return
+  const current = router.currentRoute.value
+  const isPublic = current.matched.some(record => record.meta?.public === true)
+  if (current.name === 'profile' || isPublic) return
+  if (profileStore.profile.value?.city) return
+  if (profileLoadPromise) return profileLoadPromise
+
+  profileLoadPromise = (async () => {
+    try {
+      await profileStore.loadProfile()
+    } catch (err) {
+      console.warn('[profile] deferred load failed', err)
+      return
+    }
+
+    const profileData = profileStore.profile.value
+    const liveRoute = router.currentRoute.value
+    const liveIsPublic = liveRoute.matched.some(record => record.meta?.public === true)
+    if (!profileData?.city && liveRoute.name !== 'profile' && !liveIsPublic) {
+      router.replace({ name: 'profile', query: { cityRequired: '1' } })
+    }
+  })()
+
+  try {
+    await profileLoadPromise
+  } finally {
+    profileLoadPromise = null
+  }
+}
+
+router.afterEach(() => {
+  ensureProfileForCity()
 })
 
 createApp(App).use(router).mount('#app')

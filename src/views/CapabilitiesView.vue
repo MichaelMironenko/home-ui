@@ -1,14 +1,14 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 import { setDocumentDescription, setDocumentTitle } from '../utils/pageTitle'
 import heroPreview from '../assets/hero-preview.svg'
 import colorGradient from '../assets/color-gradient.svg'
-
 const auth = useAuth()
 const router = useRouter()
 const isAuthenticated = computed(() => !!auth.user.value)
+const showConsentModal = ref(false)
 
 setDocumentTitle('Что умеет Extrahub?')
 setDocumentDescription(
@@ -70,6 +70,15 @@ const steps = [
 ]
 
 function startLogin() {
+    showConsentModal.value = true
+}
+
+function cancelLogin() {
+    showConsentModal.value = false
+}
+
+function confirmLogin() {
+    showConsentModal.value = false
     auth.login('/scenarios')
 }
 
@@ -176,6 +185,30 @@ function openDevices() {
                 </button>
             </div>
         </section>
+        <transition name="fade">
+            <div v-if="showConsentModal" class="landing-consent-overlay" role="dialog" aria-modal="true">
+                <div class="landing-consent-backdrop" @click="cancelLogin"></div>
+                <section class="landing-consent-panel">
+                    <button class="landing-close-btn" type="button" @click="cancelLogin" aria-label="Закрыть">×</button>
+                    <h2>Вход</h2>
+                    <p class="consent-text">
+                        Нажимая кнопку, вы соглашаетесь с
+                        <RouterLink class="consent-link" :to="{ name: 'consent' }" target="_blank"
+                            rel="noopener noreferrer" @click="cancelLogin">
+                            Пользовательским соглашением
+                        </RouterLink>
+                        и
+                        <RouterLink class="consent-link" :to="{ name: 'consent' }" target="_blank"
+                            rel="noopener noreferrer" @click="cancelLogin">
+                            Политикой обработки персональных данных
+                        </RouterLink>
+                    </p>
+                    <button class="landing-login-btn" type="button" @click="confirmLogin">
+                        Войти через Яндекс ID
+                    </button>
+                </section>
+            </div>
+        </transition>
     </main>
 </template>
 
@@ -479,5 +512,98 @@ function openDevices() {
     .cta-panel-actions {
         justify-content: flex-end;
     }
+}
+
+.landing-consent-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 20;
+}
+
+.landing-consent-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.75);
+}
+
+.landing-consent-panel {
+    position: relative;
+    background: var(--surface-card);
+    border-radius: 18px;
+    padding: 32px;
+    width: min(420px, calc(100% - 48px));
+    box-shadow: 0 25px 60px rgba(2, 6, 23, 0.4);
+    border: 1px solid var(--surface-border);
+    color: var(--text-primary);
+    z-index: 1;
+    text-align: center;
+}
+
+.landing-consent-panel h2 {
+    margin-top: 0;
+    margin-bottom: 12px;
+    font-size: 22px;
+    color: #fafafa;
+}
+
+.landing-consent-panel .consent-text {
+    margin: 0 0 16px;
+    font-size: 13px;
+    color: #cbd5f5;
+    line-height: 1.6;
+}
+
+.landing-consent-panel .consent-link {
+    font-size: 13px;
+    color: #fbbf24;
+    margin: 0 2px;
+    text-decoration: none;
+}
+
+.landing-consent-panel .consent-link:hover {
+    text-decoration: underline;
+}
+
+.landing-login-btn {
+    width: 100%;
+    border: none;
+    border-radius: 12px;
+    padding: 14px 18px;
+    font-size: 16px;
+    font-weight: 600;
+    color: #0f172a;
+    background: linear-gradient(120deg, #ffd54f, #ffb347);
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    margin-bottom: 8px;
+}
+
+.landing-login-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 30px rgba(251, 191, 36, 0.35);
+}
+
+.landing-close-btn {
+    position: absolute;
+    top: 10px;
+    right: 14px;
+    background: transparent;
+    border: none;
+    font-size: 20px;
+    color: #94a3b8;
+    cursor: pointer;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+    transition: opacity 0.2s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+    opacity: 0;
 }
 </style>

@@ -275,6 +275,24 @@ function scenarioStatusDisplay(item) {
 </template>
 
 <style scoped>
+.page-shell {
+    padding: 24px 16px 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.panel-card {
+    background: var(--surface-card);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--surface-border);
+    padding: 16px;
+    box-shadow: 0 12px 30px rgba(2, 6, 23, 0.55);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
 .list {
     width: min(960px, 100%);
     margin: 0 auto;

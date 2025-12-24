@@ -1,6 +1,6 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { getConfig } from '../lib/api'
 import { computeEnvironment, createDefaultScenario, normalizeScenarioStruct } from '../utils/scenarioUtils'
 import { trackFunctionCall } from '../lib/requestMetrics'
@@ -78,6 +78,7 @@ const scenario = reactive(createDefaultScenario())
 scenario.id = ''
 scenario.name = ''
 const canControlRuntime = computed(() => !isCreateMode.value && !!scenario.id)
+const scenarioDisabled = computed(() => scenario.disabled === true)
 const selectedDevicesIds = ref(new Set())
 const selectedGroupIds = ref(new Set())
 const selectionDirty = ref(false)
@@ -200,10 +201,10 @@ const endStop = createStopState({
 const AUTO_BRIGHTNESS_DEFAULTS = {
     enabled: false,
     sensorId: '',
-    luxMin: 30,
-    luxMax: 350,
-    brightnessMin: 15,
-    brightnessMax: 85
+    luxMin: 1,
+    luxMax: 1000,
+    brightnessMin: 0,
+    brightnessMax: 100
 }
 
 const autoBrightness = reactive({ ...AUTO_BRIGHTNESS_DEFAULTS })
@@ -319,9 +320,19 @@ function handleEndStopUpdate(snapshot) {
     applyStop(endStop, snapshot)
 }
 
+function handleStopModalUpdate(snapshot) {
+    if (modalPayload.value === 'start') handleStartStopUpdate(snapshot)
+    if (modalPayload.value === 'end') handleEndStopUpdate(snapshot)
+}
+
 function handleDialChange(payload) {
     if (payload?.start) applyStop(startStop, payload.start)
     if (payload?.end) applyStop(endStop, payload.end)
+}
+
+function handleAutoBrightnessUpdate(snapshot) {
+    if (!snapshot || typeof snapshot !== 'object') return
+    Object.assign(autoBrightness, snapshot)
 }
 
 function timeFromStop(stop) {
@@ -517,8 +528,43 @@ watch(
     { immediate: true }
 )
 
-function toggleScenarioPower() {
-    scenarioStatus.value = scenarioDisplayStatus.value === 'off' ? 'running' : 'off'
+function setBaselineDisabled(nextDisabled) {
+    if (!baselineComparable.value) return
+    try {
+        const payload = JSON.parse(baselineComparable.value)
+        payload.disabled = nextDisabled
+        baselineComparable.value = JSON.stringify(payload)
+    } catch {
+        baselineComparable.value = baselineComparable.value
+    }
+}
+
+async function toggleScenarioPower() {
+    if (!scenario.id) {
+        scenarioError.value = 'Сценарий еще не сохранен'
+        return
+    }
+    if (powerToggling.value) return
+    powerToggling.value = true
+    scenarioError.value = ''
+    const prevDisabled = scenario.disabled === true
+    const nextDisabled = !prevDisabled
+    const prevBaseline = baselineComparable.value
+    scenario.disabled = nextDisabled
+    scenarioStatus.value = nextDisabled ? 'off' : 'running'
+    setBaselineDisabled(nextDisabled)
+    try {
+        const payload = baselineComparable.value ? JSON.parse(baselineComparable.value) : buildScenarioPayload()
+        payload.disabled = nextDisabled
+        await scenarioRequest('/scenario/save', { method: 'POST', body: { scenario: payload } })
+    } catch (err) {
+        scenario.disabled = prevDisabled
+        scenarioStatus.value = prevDisabled ? 'off' : 'running'
+        baselineComparable.value = prevBaseline
+        scenarioError.value = err?.message || 'Не удалось изменить состояние сценария'
+    } finally {
+        powerToggling.value = false
+    }
 }
 
 const timeTicker = ref(Date.now())
@@ -611,6 +657,10 @@ const catalog = reactive({
 const scenarioSaving = ref(false)
 const scenarioMessage = ref('')
 const scenarioError = ref('')
+const powerToggling = ref(false)
+const saveToastMessage = ref('')
+const saveToastId = ref(0)
+let saveToastTimer = null
 const catalogLoading = ref(false)
 const catalogError = ref('')
 const catalogGroupSignature = computed(() =>
@@ -625,6 +675,15 @@ const catalogGroupSignature = computed(() =>
 watch(catalogGroupSignature, () => {
     if (!selectionDirty.value) syncSelectedDevicesFromSources(false)
 })
+
+function showSaveToast(message) {
+    saveToastMessage.value = message
+    saveToastId.value += 1
+    if (saveToastTimer) clearTimeout(saveToastTimer)
+    saveToastTimer = setTimeout(() => {
+        saveToastMessage.value = ''
+    }, 2400)
+}
 
 async function loadConfig() {
     try {
@@ -725,7 +784,7 @@ function buildScenarioPayload() {
     }
     payload.runtime = payload.runtime || {}
     payload.runtime.presence = presenceMode.value === 'home' ? 'onlyWhenHome' : 'always'
-    payload.disabled = scenarioStatus.value === 'off'
+    payload.disabled = scenario.disabled === true
     return payload
 }
 
@@ -885,7 +944,7 @@ async function saveScenario() {
         scenarioStatus.value = scenario.disabled ? 'off' : 'running'
         applyStopsFromScenario()
         if (!selectionDirty.value) syncSelectedDevicesFromSources(false)
-        scenarioMessage.value = 'Сценарий сохранен'
+        showSaveToast('Сценарий сохранён')
         editingName.value = false
         markBaseline()
         const savedId = response?.scenario?.id || scenario.id
@@ -898,6 +957,15 @@ async function saveScenario() {
     } finally {
         scenarioSaving.value = false
     }
+}
+
+async function handleCancel() {
+    if (scenarioSaving.value) return
+    if (isCreateMode.value || !routeScenarioId.value) {
+        resetScenarioState()
+        return
+    }
+    await loadScenarioById(routeScenarioId.value)
 }
 
 async function deleteScenario() {
@@ -918,17 +986,6 @@ async function deleteScenario() {
 watch(hasUnsavedChanges, (dirty) => {
     if (dirty) scenarioMessage.value = ''
 })
-
-onBeforeRouteLeave(() => {
-    if (!hasUnsavedChanges.value) return true
-    return window.confirm('Есть несохраненные изменения. Выйти без сохранения?')
-})
-
-function handleBeforeUnload(event) {
-    if (!hasUnsavedChanges.value) return
-    event.preventDefault()
-    event.returnValue = ''
-}
 
 onMounted(async () => {
     await loadConfig()
@@ -952,9 +1009,6 @@ onMounted(async () => {
     timeTickerInterval = setInterval(() => {
         timeTicker.value = Date.now()
     }, 30 * 1000)
-    if (typeof window !== 'undefined') {
-        window.addEventListener('beforeunload', handleBeforeUnload)
-    }
 })
 
 watch(
@@ -972,8 +1026,9 @@ onUnmounted(() => {
         clearInterval(timeTickerInterval)
         timeTickerInterval = null
     }
-    if (typeof window !== 'undefined') {
-        window.removeEventListener('beforeunload', handleBeforeUnload)
+    if (saveToastTimer) {
+        clearTimeout(saveToastTimer)
+        saveToastTimer = null
     }
 })
 
@@ -1347,7 +1402,10 @@ async function toggleRuntimePause() {
             const res = await scenarioRequest('/scenario/resume', { method: 'POST', body: { id: scenario.id } })
             scenarioPauseInfo.value = res?.result?.pause ?? res?.pause ?? null
             if (res?.status) scenarioStatusSummary.value = summarizeStatusRecord(res.status)
-            scenarioMessage.value = res?.result?.reason === 'manual_pause' ? 'Сценарий по-прежнему на паузе' : 'Пауза снята'
+            const pauseReason = res?.result?.reason
+            scenarioMessage.value = (pauseReason === 'manual_pause' || pauseReason === 'autopause')
+                ? 'Сценарий по-прежнему на паузе'
+                : 'Пауза снята'
         } else {
             const res = await scenarioRequest('/scenario/pause', { method: 'POST', body: { id: scenario.id } })
             scenarioPauseInfo.value =
@@ -1370,7 +1428,7 @@ function handleResumeFromDial() {
 </script>
 
 <template>
-    <main class="scenario-dial-page">
+    <main class="scenario-dial-page" :class="{ 'scenario-disabled': scenarioDisabled }">
         <div class="title-row">
             <div class="scenario-name-wrap">
                 <input v-if="editingName" ref="nameInputRef" v-model="scenarioNameValue" maxlength="30"
@@ -1391,7 +1449,7 @@ function handleResumeFromDial() {
                     <span v-if="runtimePaused">▶</span>
                     <span v-else>⏸</span>
                 </button>
-                <button type="button" class="status-icon-btn power"
+                <button type="button" class="status-icon-btn power" :disabled="powerToggling"
                     :title="scenarioDisplayStatus === 'off' ? 'Включить' : 'Выключить'" @click="toggleScenarioPower">
                     <span>{{ scenarioDisplayStatus === 'off' ? '⏻' : '⏼' }}</span>
                 </button>
@@ -1424,19 +1482,22 @@ function handleResumeFromDial() {
                 </section>
 
                 <div class="scenario-feedback">
-                    <p v-if="scenarioMessage" class="status-info success">{{ scenarioMessage }}</p>
                     <p v-if="scenarioError" class="status-info error">{{ scenarioError }}</p>
+                    <button v-if="scenario.id" type="button" class="scenario-delete-text" @click="handleDelete">
+                        Удалить сценарий
+                    </button>
                 </div>
 
-                <ScenarioActionsFooter class="scenario-actions-footer" :create-mode="isCreateMode"
-                    :can-delete="!!scenario.id" :saving="scenarioSaving" :dirty="hasUnsavedChanges" @save="handleSave"
-                    @delete="handleDelete" />
+                <ScenarioActionsFooter v-if="hasUnsavedChanges || scenarioSaving" class="scenario-actions-footer"
+                    :create-mode="isCreateMode" :saving="scenarioSaving" :dirty="hasUnsavedChanges"
+                    @save="handleSave" @cancel="handleCancel" />
             </div>
         </div>
 
         <StopStateSheet :open="activeModal === 'state'" v-if="currentStopForModal" :stop="currentStopForModal"
             :palette="colorPalette" :time="scenario.time" :context="modalPayload === 'start' ? 'start' : 'end'"
-            :auto-brightness="autoBrightness" :sensor-options="sensorOptions" @close="closeModal" />
+            :auto-brightness="autoBrightness" :sensor-options="sensorOptions" @close="closeModal"
+            @update:stop="handleStopModalUpdate" @update:autoBrightness="handleAutoBrightnessUpdate" />
 
         <BottomSheet :open="activeModal === 'devices'" title="Выбор устройств" @close="closeModal">
             <DeviceSelectorSheet :sections="deviceSheetSections" :selected-ids="selectedDevicesIds"
@@ -1463,6 +1524,10 @@ function handleResumeFromDial() {
                     @update:model-value="presenceMode = $event" />
             </div>
         </BottomSheet>
+
+        <div v-if="saveToastMessage" :key="saveToastId" class="save-toast" role="status" aria-live="polite">
+            {{ saveToastMessage }}
+        </div>
     </main>
 </template>
 
@@ -1603,6 +1668,13 @@ function handleResumeFromDial() {
     display: flex;
     flex-direction: column;
     gap: 18px;
+    transition: filter 0.25s ease, opacity 0.25s ease;
+}
+
+.scenario-dial-page.scenario-disabled .dial-layout {
+    filter: grayscale(0.4) brightness(0.82);
+    opacity: 0.88;
+    pointer-events: none;
 }
 
 .dial-column {
@@ -1732,5 +1804,53 @@ function handleResumeFromDial() {
 
 .status-info.error {
     color: #f87171;
+}
+
+.scenario-delete-text {
+    margin: 6px 0 0;
+    font-size: 11px;
+    color: rgba(248, 113, 113, 0.9);
+    cursor: pointer;
+    letter-spacing: normal;
+    text-transform: none;
+    background: transparent;
+    border: none;
+    padding: 0;
+    font: inherit;
+    display: block;
+    width: 100%;
+    text-align: center;
+}
+
+.scenario-delete-text:hover {
+    color: #f87171;
+}
+
+.save-toast {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    background: #16a34a;
+    color: #ffffff;
+    padding: 12px 18px;
+    border-radius: 14px;
+    border: 1px solid rgba(22, 163, 74, 0.7);
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
+    font-size: 14px;
+    font-weight: 600;
+    animation: toast-pop 0.25s ease;
+    z-index: 30;
+}
+
+@keyframes toast-pop {
+    from {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+    }
 }
 </style>

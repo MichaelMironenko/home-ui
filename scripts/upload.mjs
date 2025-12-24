@@ -24,6 +24,10 @@ if (!bucket) {
 const prefix = (env.DEPLOY_PREFIX || '').replace(/^\/+|\/+$/g, '')
 const profile = env.DEPLOY_PROFILE
 const cacheControl = env.DEPLOY_CACHE_CONTROL
+const assetsCacheControl =
+  env.DEPLOY_ASSETS_CACHE_CONTROL || 'public, max-age=31536000, immutable'
+const htmlCacheControl =
+  env.DEPLOY_HTML_CACHE_CONTROL || 'no-cache'
 const ycCli = env.YC_CLI_BIN || env.DEPLOY_CLI || 'yc'
 const distDir = env.DEPLOY_DIST || 'dist'
 
@@ -141,9 +145,18 @@ const main = async () => {
     const mime = toMime(relativeFile)
 
     const args = ['storage', 's3', 'cp', localPath, remoteUri, '--content-type', mime]
+    let fileCacheControl = null
 
-    if (cacheControl) {
-      args.push('--cache-control', cacheControl)
+    if (relativeFile.startsWith('assets/')) {
+      fileCacheControl = assetsCacheControl
+    } else if (relativeFile.endsWith('.html')) {
+      fileCacheControl = htmlCacheControl
+    } else if (cacheControl) {
+      fileCacheControl = cacheControl
+    }
+
+    if (fileCacheControl) {
+      args.push('--cache-control', fileCacheControl)
     }
 
     if (acl) {

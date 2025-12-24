@@ -116,13 +116,14 @@ export function blendHex(first, second, ratio = 0) {
 }
 
 export function stopColorHex(stop) {
-    if (!stop) return '#94a3b8'
+    if (!stop) return '#ccd4deff'
     if (stop.useColor) {
         const baseHex = stop.colorMode === 'rgb' ? stop.colorHex : temperatureToHex(stop.temperature)
         return applyBrightnessHex(baseHex, stop.brightness, stop.useBrightness)
     }
     if (stop.useBrightness) {
-        return applyBrightnessHex('#94a3b8', stop.brightness, true)
+        const ratio = clampNumber(stop.brightness, 0, 100) / 100
+        return blendHex('#0f172a', '#f8fafc', ratio)
     }
-    return '#94a3b8'
+    return '#b9c1cdff'
 }

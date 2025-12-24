@@ -6,10 +6,6 @@ const props = defineProps({
         type: Boolean,
         default: false
     },
-    canDelete: {
-        type: Boolean,
-        default: true
-    },
     saving: {
         type: Boolean,
         default: false
@@ -20,20 +16,21 @@ const props = defineProps({
     }
 })
 
-const emit = defineEmits(['save', 'delete'])
+const emit = defineEmits(['save', 'cancel'])
 
 const primaryLabel = computed(() => (props.createMode ? 'Создать' : 'Сохранить'))
 </script>
 
 <template>
     <section class="actions-footer">
-        <p v-if="dirty" class="dirty-hint">Есть несохраненные изменения</p>
         <div class="action-row" role="group" aria-label="Действия сценария">
-            <button v-if="canDelete" type="button" class="ghost" :disabled="saving" @click="emit('delete')">
-                Удалить
+            <button type="button" class="ghost" :disabled="saving" @click="emit('cancel')">
+                Отмена
             </button>
-            <button type="button" class="primary" :disabled="saving" @click="emit('save')">
-                {{ primaryLabel }}
+            <button type="button" class="primary" :class="{ 'is-saving': saving }" :disabled="saving"
+                @click="emit('save')">
+                <span v-if="saving">Сохранение…</span>
+                <span v-else>{{ primaryLabel }}</span>
             </button>
         </div>
     </section>
@@ -44,12 +41,6 @@ const primaryLabel = computed(() => (props.createMode ? 'Создать' : 'Со
     display: flex;
     flex-direction: column;
     gap: 12px;
-}
-
-.dirty-hint {
-    margin: 0;
-    font-size: 13px;
-    color: rgba(248, 250, 252, 0.7);
 }
 
 .action-row {
@@ -70,12 +61,40 @@ const primaryLabel = computed(() => (props.createMode ? 'Создать' : 'Со
 .primary {
     background: #7c3aed;
     color: white;
+    position: relative;
+    overflow: hidden;
+}
+
+.primary.is-saving::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(120deg, rgba(255, 255, 255, 0) 20%, rgba(255, 255, 255, 0.35) 50%, rgba(255, 255, 255, 0) 80%);
+    z-index: 0;
+    pointer-events: none;
+    transform: translateX(-100%);
+    animation: shimmer 1.3s ease-in-out infinite;
+}
+
+.primary > span {
+    position: relative;
+    z-index: 1;
 }
 
 .ghost {
     background: transparent;
     border: 1px solid rgba(255, 255, 255, 0.2);
     color: #f87171;
+}
+
+@keyframes shimmer {
+    0% {
+        transform: translateX(-100%);
+    }
+
+    100% {
+        transform: translateX(100%);
+    }
 }
 
 @media (max-width: 499px) {

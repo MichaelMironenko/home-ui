@@ -66,6 +66,7 @@ const TICK_EDGE_RATIO = 20
 const SUN_TIME_EDGE_RATIO = 20
 const NUMBER_RADIUS_RATIO = 3.5
 const MIN_SCENARIO_SPAN_MINUTES = 10
+const MAX_SCENARIO_SPAN_MINUTES = 23 * 60
 const ANCHOR_SNAP_WINDOW_MINUTES = 5
 const DIAL_DAY_COLOR = 'rgba(255, 216, 170, 0.82)'
 const DIAL_NIGHT_COLOR = 'rgba(93, 121, 156, 1)'
@@ -77,6 +78,7 @@ const HALF_DAY_MINUTES = MINUTES_PER_DAY / 2
 const FULL_CIRCLE_DEG = 360
 const HANDLE_EMIT_THROTTLE_MS = 80
 const AUTO_BRIGHTNESS_WARM_HEX = '#fff4dd'
+const CHEVRON_STEP_MINUTES = 30
 
 const dialElement = ref(null)
 const dialMetrics = reactive({
@@ -121,6 +123,7 @@ const stopEmitState = {
 }
 
 const gradientId = `scenario-arc-gradient-${Math.random().toString(36).slice(2, 9)}`
+const chevronShadowId = `scenario-chevron-shadow-${Math.random().toString(36).slice(2, 9)}`
 
 const dialScale = computed(() => {
     const size = dialMetrics.size || BASE_DIAL_SIZE
@@ -165,6 +168,22 @@ const startLabelCompact = computed(
 )
 const endLabelCompact = computed(
     () => localEndStop?.mode !== 'clock' && (localEndStop?.offset || 0) !== 0
+)
+const startAnchorActive = computed(() => isAnchoredStop(localStartStop))
+const endAnchorActive = computed(() => isAnchoredStop(localEndStop))
+const startAnchorTarget = computed(() => {
+    if (!startAnchorActive.value) return ''
+    return localStartStop?.mode === 'sunrise' ? 'рассвета' : 'заката'
+})
+const endAnchorTarget = computed(() => {
+    if (!endAnchorActive.value) return ''
+    return localEndStop?.mode === 'sunrise' ? 'рассвета' : 'заката'
+})
+const startAnchorTitle = computed(() =>
+    startAnchorTarget.value ? `Измените смещение от ${startAnchorTarget.value}` : ''
+)
+const endAnchorTitle = computed(() =>
+    endAnchorTarget.value ? `Измените смещение от ${endAnchorTarget.value}` : ''
 )
 const gradientStartColor = computed(() => stopColorHex(localStartStop))
 const gradientEndColor = computed(() => stopColorHex(localEndStop))
@@ -246,7 +265,7 @@ const scenarioSpanMinutes = computed(() =>
 function clampScenarioSpan(spanMinutes) {
     const span = Number(spanMinutes) || 0
     if (span <= 0) return MIN_SCENARIO_SPAN_MINUTES
-    return Math.max(MIN_SCENARIO_SPAN_MINUTES, span)
+    return Math.min(MAX_SCENARIO_SPAN_MINUTES, Math.max(MIN_SCENARIO_SPAN_MINUTES, span))
 }
 
 const scenarioArc = computed(() => {
@@ -273,6 +292,31 @@ const scenarioArc = computed(() => {
     }
 })
 
+const scenarioChevrons = computed(() => {
+    const radius = geom.value.scheduleRadius
+    const width = geom.value.scheduleStrokeWidth
+    const spanMinutes = scenarioSpanMinutes.value
+    if (!Number.isFinite(radius) || !Number.isFinite(width) || radius <= 0 || width <= 0) return []
+    if (!Number.isFinite(spanMinutes) || spanMinutes < CHEVRON_STEP_MINUTES * 3) return []
+    const size = Math.max(3.2, Math.min(9, width * 0.38))
+    const chevronHalf = Math.max(2.2, size * 0.65)
+    const chevronDepth = Math.max(2, size * 0.6)
+    const marks = []
+    const edgeInset = CHEVRON_STEP_MINUTES * 1
+    for (let offset = edgeInset + 20; offset < spanMinutes - edgeInset; offset += CHEVRON_STEP_MINUTES) {
+        const minute = normalizeMinutes(startMinutes.value + offset)
+        const angle = minuteToAngle(minute)
+        const point = angleToPoint(angle, radius)
+        marks.push({
+            x: point.x,
+            y: point.y,
+            rotate: angle + 90,
+            path: `M ${-chevronDepth} ${-chevronHalf} L 0 0 L ${-chevronDepth} ${chevronHalf}`
+        })
+    }
+    return marks
+})
+
 const scenarioArcGradientVector = computed(() => {
     if (autoOnlyBrightnessArc.value) return null
     const arc = scenarioArc.value
@@ -292,7 +336,7 @@ const scenarioBoundaryMarks = computed(() => {
     const radius = geom.value.scheduleRadius
     const width = geom.value.scheduleStrokeWidth
     if (!Number.isFinite(radius) || !Number.isFinite(width) || width <= 0) return null
-    const span = clockwiseDuration(startMinutes.value, endMinutes.value)
+    const span = scenarioSpanMinutes.value
     if (span >= MINUTES_PER_DAY - minuteStep) return null
     const startAngle = minuteToAngle(startMinutes.value)
     const endAngle = minuteToAngle(endMinutes.value)
@@ -303,27 +347,18 @@ const scenarioBoundaryMarks = computed(() => {
     return {
         start: {
             angle: startAngle,
-            cap: angleToPoint(startAngle, radius),
             inner: angleToPoint(startAngle, inner),
             outer: angleToPoint(startAngle, outer),
             color: autoColor ?? gradientStartColor.value
         },
         end: {
             angle: endAngle,
-            cap: angleToPoint(endAngle, radius),
             inner: angleToPoint(endAngle, inner),
             outer: angleToPoint(endAngle, outer),
             color: autoColor ?? gradientEndColor.value
-        },
-        capRadius: width / 2
+        }
     }
 })
-
-function semicircleCapPath(radius) {
-    const r = Math.max(0, Number(radius) || 0)
-    if (r <= 0) return ''
-    return `M 0 ${-r} A ${r} ${r} 0 0 1 0 ${r} L 0 ${-r} Z`
-}
 
 const dialStyleVars = computed(() => {
     return {
@@ -659,6 +694,9 @@ function handleDialPointerMove(event) {
         if (clockwiseDuration(snappedMinutes, end) < MIN_SCENARIO_SPAN_MINUTES) {
             snappedMinutes = normalizeMinutes(snapMinutes(end - MIN_SCENARIO_SPAN_MINUTES, 'floor'))
         }
+        if (clockwiseDuration(snappedMinutes, end) > MAX_SCENARIO_SPAN_MINUTES) {
+            snappedMinutes = normalizeMinutes(snapMinutes(end - MAX_SCENARIO_SPAN_MINUTES, 'ceil'))
+        }
         markHandleTapMoved('start', event)
         if (suppressedSnapHandle.value === 'start') {
             toClockMode(localStartStop, snappedMinutes)
@@ -671,6 +709,9 @@ function handleDialPointerMove(event) {
         const start = startMinutes.value
         if (clockwiseDuration(start, snappedMinutes) < MIN_SCENARIO_SPAN_MINUTES) {
             snappedMinutes = normalizeMinutes(snapMinutes(start + MIN_SCENARIO_SPAN_MINUTES, 'ceil'))
+        }
+        if (clockwiseDuration(start, snappedMinutes) > MAX_SCENARIO_SPAN_MINUTES) {
+            snappedMinutes = normalizeMinutes(snapMinutes(start + MAX_SCENARIO_SPAN_MINUTES, 'floor'))
         }
         markHandleTapMoved('end', event)
         if (suppressedSnapHandle.value === 'end') {
@@ -773,8 +814,10 @@ function applyMinutes(stop, minutes, type) {
         toClockMode(stop, minutes)
     }
     const adjusted = ensureMinScenarioSpan(type)
+    const adjustedMax = ensureMaxScenarioSpan(type)
     if (type) enqueueStopEmit(type)
     if (adjusted && adjusted !== type) enqueueStopEmit(adjusted)
+    if (adjustedMax && adjustedMax !== type) enqueueStopEmit(adjustedMax)
 }
 
 function isAnchoredStop(stop) {
@@ -810,6 +853,33 @@ function ensureMinScenarioSpan(primaryType) {
             return 'end'
         }
         setClockStop('start', snapMinutes(end - MIN_SCENARIO_SPAN_MINUTES, 'floor'))
+        return 'start'
+    }
+}
+
+function ensureMaxScenarioSpan(primaryType) {
+    const start = stopMinutes(localStartStop)
+    const end = stopMinutes(localEndStop)
+    const span = clockwiseDuration(start, end)
+    if (span <= MAX_SCENARIO_SPAN_MINUTES) return
+    const startAnchored = isAnchoredStop(localStartStop)
+    const endAnchored = isAnchoredStop(localEndStop)
+
+    if (primaryType === 'end') {
+        if (endAnchored && !startAnchored) {
+            setClockStop('start', snapMinutes(end - MAX_SCENARIO_SPAN_MINUTES, 'ceil'))
+            return 'start'
+        }
+        setClockStop('end', snapMinutes(start + MAX_SCENARIO_SPAN_MINUTES, 'floor'))
+        return 'end'
+    }
+
+    if (primaryType === 'start') {
+        if (startAnchored && !endAnchored) {
+            setClockStop('end', snapMinutes(start + MAX_SCENARIO_SPAN_MINUTES, 'floor'))
+            return 'end'
+        }
+        setClockStop('start', snapMinutes(end - MAX_SCENARIO_SPAN_MINUTES, 'ceil'))
         return 'start'
     }
 }
@@ -891,13 +961,17 @@ function minutesToTimeString(minute) {
             <div class="outer-ring"></div>
 
             <svg class="scenario-ring-overlay" viewBox="0 0 200 200">
-                <defs v-if="scenarioArc && scenarioArcGradientVector">
-                    <linearGradient :id="gradientId" gradientUnits="userSpaceOnUse" :x1="scenarioArcGradientVector.x1"
+                <defs>
+                    <linearGradient v-if="scenarioArc && scenarioArcGradientVector" :id="gradientId"
+                        gradientUnits="userSpaceOnUse" :x1="scenarioArcGradientVector.x1"
                         :y1="scenarioArcGradientVector.y1" :x2="scenarioArcGradientVector.x2"
                         :y2="scenarioArcGradientVector.y2">
                         <stop offset="0%" :stop-color="gradientStartColor" />
                         <stop offset="100%" :stop-color="gradientEndColor" />
                     </linearGradient>
+                    <filter :id="chevronShadowId" x="-30%" y="-30%" width="160%" height="160%">
+                        <feDropShadow dx="0" dy="0.6" stdDeviation="0.4" flood-color="rgba(0, 0, 0, 0.5)" />
+                    </filter>
                 </defs>
                 <g v-if="scenarioArc" class="scenario-ring-group">
                     <path v-if="scenarioArc.kind === 'path'" :d="scenarioArc.path" :stroke="scenarioArc.stroke"
@@ -906,18 +980,11 @@ function minutesToTimeString(minute) {
                         fill="none" :stroke="scenarioArc.stroke" :stroke-width="scenarioArc.width"
                         :class="{ pulse: scenarioArc.pulse }" />
                 </g>
-                <g v-if="scenarioBoundaryMarks" class="scenario-caps">
-                    <g class="scenario-cap-group"
-                        :transform="`translate(${scenarioBoundaryMarks.start.cap.x} ${scenarioBoundaryMarks.start.cap.y}) rotate(${scenarioBoundaryMarks.start.angle - 90})`">
-                        <path class="scenario-cap" :class="{ pulse: arcPulse }"
-                            :d="semicircleCapPath(scenarioBoundaryMarks.capRadius)"
-                            :fill="scenarioBoundaryMarks.start.color" />
-                    </g>
-                    <g class="scenario-cap-group"
-                        :transform="`translate(${scenarioBoundaryMarks.end.cap.x} ${scenarioBoundaryMarks.end.cap.y}) rotate(${scenarioBoundaryMarks.end.angle + 90})`">
-                        <path class="scenario-cap" :class="{ pulse: arcPulse }"
-                            :d="semicircleCapPath(scenarioBoundaryMarks.capRadius)"
-                            :fill="scenarioBoundaryMarks.end.color" />
+                <g v-if="scenarioChevrons.length" class="scenario-chevrons">
+                    <g v-for="(item, index) in scenarioChevrons" :key="`chevron-${index}`"
+                        :transform="`translate(${item.x} ${item.y}) rotate(${item.rotate})`">
+                        <path class="scenario-chevron" :d="item.path" :filter="`url(#${chevronShadowId})`"
+                            :style="{ animationDelay: `${index * 0.16}s` }" />
                     </g>
                 </g>
                 <g v-if="scenarioBoundaryMarks" class="scenario-boundaries">
@@ -1125,6 +1192,20 @@ function minutesToTimeString(minute) {
     }
 }
 
+@keyframes chevron-wave {
+    0% {
+        opacity: 0.15;
+    }
+
+    40% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0.15;
+    }
+}
+
 .current-needle {
     stroke: #f87171;
     stroke-width: 2px;
@@ -1155,10 +1236,20 @@ function minutesToTimeString(minute) {
 .scenario-ring-group path,
 .scenario-ring-group circle {
     fill: none;
-    stroke-linecap: butt;
+    stroke-linecap: round;
     stroke-linejoin: round;
     opacity: 0.95;
     shape-rendering: geometricPrecision;
+}
+
+.scenario-chevron {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.5);
+    stroke-width: 1.6px;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    opacity: 0.15;
+    animation: chevron-wave 1.8s ease-in-out infinite;
 }
 
 .scenario-cap {
@@ -1201,5 +1292,10 @@ function minutesToTimeString(minute) {
 .dial.inactive .scenario-ring-group path,
 .dial.inactive .scenario-ring-group circle {
     opacity: 0.65;
+}
+
+.dial.inactive .scenario-chevron {
+    opacity: 0.45;
+    animation: none;
 }
 </style>
