@@ -3,7 +3,7 @@
 ## Entry Points
 
 ### `src/main.js`
-- Bootstraps the Vue 3 app, wires `Vue Router` routes for every view (`Capabilities`, `Devices`, `Scenarios`, `Scenario`, `Legacy`, `Auto Light`, `Events`, `Profile`, `Login`, `NotFound`).
+- Bootstraps the Vue 3 app, wires `Vue Router` routes for every view (`Capabilities`, `Devices`, `Scenarios`, `Scenario`, `Auto Light`, `Events`, `Profile`, `Login`, `NotFound`).
 - Imports `useAuth` and `useProfile` to guard navigation: `beforeEach` ensures a logged-in session, redirects unauthenticated users to `/login`, reloads the profile, and forces the profile page when a city is missing.
 - Handles login redirect logic and mounts `App.vue`.
 
@@ -156,10 +156,6 @@
 - Toggles brightness mapping between manual ranges and sensor-driven mode, wraps `RangeIntervalSlider`, and exposes sensor configuration (min/max lux → brightness output).
 - Shows runtime markers when backend reports current brightness values.
 
-### `src/components/ScenarioEditor.vue`
-- The legacy scenario editor that ties together `ScenarioDevicesSection`, `ScenarioMappingSection`, `ScenarioTimeSection`, `ColorRamp`, `PresenceOptions`, `ChartBlock`, and mode selectors.
-- Manages `state`, selection sets (via `useTargetDevices`), slug generation (`slugify`), presence summary, `save`/`delete` flows using `getConfig` and `trackFunctionCall`, and derives local progress/time percentages.
-
 ### `src/components/ScenarioModifiersSection.vue`
 - Placeholder WIP card describing future modifiers/conditions.
 
@@ -264,9 +260,6 @@
 - Loads scenario data via `useScenarioApi`, normalizes it, tracks `selectedDevices`, `selectedGroups`, schedule info, and auto-brightness preferences.
 - Handles editing name/time/device selection, toggles (day sets, presence modes), `saveScenario`/`deleteScenario`, `toggleRuntimePause`, and uses the dial components to edit start/end states.
 - Computes derived summaries (schedule label, presence label, device count) and uses `pageTitle` to describe the scenario.
-
-### `src/views/ScenarioLegacyView.vue`
-- Wrapper around `ScenarioEditor` for the classic scenario format with route-based mode detection (create/edit) and navigation to the new ID after save.
 
 ### `src/views/AutoLightScenarioView.vue`
 - Wraps `AutoLightEditor`, watches mode (create vs edit), and updates the route when a new ID is assigned.

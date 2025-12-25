@@ -93,7 +93,7 @@ export function deriveScenarioListStatus(item, nowInput = Date.now()) {
     if (item.disabled) return buildStatus('off', 'Выключен')
     if (item.pause) {
         const reason = resolvePauseReason(item.pause, item.status)
-        const label = reason ? `Пауза | ${reason}` : 'Пауза'
+        const label = reason ? `Пауза · ${reason}` : 'Пауза'
         return buildStatus('paused', label)
     }
     const status = item.status
@@ -197,11 +197,11 @@ function formatTime(timestamp, tz) {
     return formatter.format(date)
 }
 
-function resolvePauseReason(pause, status) {
+export function resolvePauseReason(pause, status) {
     const pauseReason = pause?.reason
     const source = pauseReason?.source || status?.result?.reason
     const normalized = source ? String(source).toLowerCase() : ''
-    if (PAUSE_MANUAL_SOURCES.has(normalized)) return ''
+    if (PAUSE_MANUAL_SOURCES.has(normalized)) return 'Ручная коррекция'
     if (normalized && PAUSE_REASON_LABELS[normalized]) return PAUSE_REASON_LABELS[normalized]
     if (normalized && normalized.includes('presence')) return PAUSE_REASON_LABELS.presence
     if (pauseReason?.label) return pauseReason.label

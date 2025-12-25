@@ -1,3 +1,5 @@
+<!-- внимание !!! Этот файл для будущих версий и не должен учитываться при анализе и редактировании кода. -->
+
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import ScenarioDevicesSection from './ScenarioDevicesSection.vue'
@@ -925,7 +927,7 @@ watch(
                                 {{ isPaused ? 'На паузе' : 'Активен' }}
                                 <template v-if="pauseUntilLabel">
                                     · до {{ pauseUntilLabel }}<template v-if="pauseReasonLabel"> · {{ pauseReasonLabel
-                                    }}</template>
+                                        }}</template>
                                 </template>
                             </template>
                         </span>
@@ -1011,64 +1013,35 @@ watch(
                 <AdaptiveLightRoomDemo />
 
                 <div class="tuning-grid">
-                    <TuningSliderColumn
-                        label="Яркость"
-                        unit="%"
-                        :min="0"
-                        :max="100"
-                        :step="1"
-                        :value="brightnessControl.control.value"
-                        :display-value="brightnessDisplayValue"
-                        :fill-percent="brightnessFillPercent"
-                        :target-percent="brightnessTargetPercent"
+                    <TuningSliderColumn label="Яркость" unit="%" :min="0" :max="100" :step="1"
+                        :value="brightnessControl.control.value" :display-value="brightnessDisplayValue"
+                        :fill-percent="brightnessFillPercent" :target-percent="brightnessTargetPercent"
                         :disabled="!isPersisted || isDisabled"
                         :quick-increase-disabled="quickActionsDisabled || !brightnessLimits.canIncrease"
                         :quick-decrease-disabled="quickActionsDisabled || !brightnessLimits.canDecrease"
-                        increase-label="Ярче"
-                        decrease-label="Темнее"
-                        increase-icon="+"
-                        decrease-icon="−"
-                        track-class="tuning-slider__track--brightness"
-                        fill-class="tuning-slider__fill--brightness"
+                        increase-label="Ярче" decrease-label="Темнее" increase-icon="+" decrease-icon="−"
+                        track-class="tuning-slider__track--brightness" fill-class="tuning-slider__fill--brightness"
                         fill-gradient="linear-gradient(180deg, #ffffff 0%, #111827 100%)"
-                        slider-class="tuning-slider__input--brightness"
-                        @pointerdown="brightnessControl.onPointerDown"
-                        @pointerup="brightnessControl.onPointerUp"
-                        @pointercancel="brightnessControl.onPointerUp"
+                        slider-class="tuning-slider__input--brightness" @pointerdown="brightnessControl.onPointerDown"
+                        @pointerup="brightnessControl.onPointerUp" @pointercancel="brightnessControl.onPointerUp"
                         @input="(value) => brightnessControl.onInput(value, 'Ползунок яркости')"
                         @change="() => brightnessControl.scheduleSend(true)"
-                        @quick-plus="() => handleQuickBrightness(10)"
-                        @quick-minus="() => handleQuickBrightness(-10)"
-                    />
+                        @quick-plus="() => handleQuickBrightness(10)" @quick-minus="() => handleQuickBrightness(-10)" />
 
-                    <TuningSliderColumn
-                        label="Цветовая температура"
-                        unit="K"
-                        :min="minCct"
-                        :max="maxCct"
-                        :step="1"
-                        :value="temperatureControl.control.value"
-                        :display-value="temperatureDisplayValue"
-                        :fill-percent="temperatureFillPercent"
-                        :target-percent="temperatureTargetPercent"
+                    <TuningSliderColumn label="Цветовая температура" unit="K" :min="minCct" :max="maxCct" :step="1"
+                        :value="temperatureControl.control.value" :display-value="temperatureDisplayValue"
+                        :fill-percent="temperatureFillPercent" :target-percent="temperatureTargetPercent"
                         :disabled="!isPersisted || isDisabled"
                         :quick-increase-disabled="quickActionsDisabled || !temperatureLimits.canIncrease"
-                    :quick-decrease-disabled="quickActionsDisabled || !temperatureLimits.canDecrease"
-                    increase-label="Теплее"
-                    decrease-label="Холоднее"
-                    increase-icon="+"
-                    decrease-icon="−"
-                    track-class="tuning-slider__track--cct"
-                    fill-class="tuning-slider__fill--cct"
-                    slider-class="tuning-slider__input--cct"
-                    @pointerdown="temperatureControl.onPointerDown"
-                    @pointerup="temperatureControl.onPointerUp"
-                        @pointercancel="temperatureControl.onPointerUp"
+                        :quick-decrease-disabled="quickActionsDisabled || !temperatureLimits.canDecrease"
+                        increase-label="Теплее" decrease-label="Холоднее" increase-icon="+" decrease-icon="−"
+                        track-class="tuning-slider__track--cct" fill-class="tuning-slider__fill--cct"
+                        slider-class="tuning-slider__input--cct" @pointerdown="temperatureControl.onPointerDown"
+                        @pointerup="temperatureControl.onPointerUp" @pointercancel="temperatureControl.onPointerUp"
                         @input="(value) => temperatureControl.onInput(value, 'Ползунок температуры')"
                         @change="() => temperatureControl.scheduleSend(true)"
                         @quick-plus="() => handleQuickTemperature(100)"
-                        @quick-minus="() => handleQuickTemperature(-100)"
-                    />
+                        @quick-minus="() => handleQuickTemperature(-100)" />
                 </div>
 
                 <transition name="fade">
@@ -1092,12 +1065,8 @@ watch(
                     </div>
                     <span v-if="presenceStatusLabel" class="presence-status">{{ presenceStatusLabel }}</span>
                 </header>
-                <PresenceOptions
-                    v-model="scenario.runtime.presence"
-                    :choices="presenceChoices"
-                    name="presence-mode-autolight"
-                    :disabled="isDisabled"
-                />
+                <PresenceOptions v-model="scenario.runtime.presence" :choices="presenceChoices"
+                    name="presence-mode-autolight" :disabled="isDisabled" />
             </section>
 
             <section v-if="statusInfo || latestState" class="panel status-panel">
@@ -1155,44 +1124,36 @@ watch(
             </section>
 
             <section class="panel charts">
-                <ChartBlock
-                    title="Дневная яркость"
-                    :hint="`Работает по датчику до ${scenario.autoLight.L_off} лк`"
-                    reset-label="Сбросить кривую"
-                    @reset="resetCurve('day')"
-                >
+                <ChartBlock title="Дневная яркость" :hint="`Работает по датчику до ${scenario.autoLight.L_off} лк`"
+                    reset-label="Сбросить кривую" @reset="resetCurve('day')">
                     <svg viewBox="0 0 400 200" role="img" aria-label="Day brightness curve">
                         <text x="200" y="195" class="axis-label">Освещённость (норм., 0→1)</text>
-                        <text x="14" y="100" class="axis-label axis-label--y" transform="rotate(-90, 14, 100)">Яркость (%)</text>
+                        <text x="14" y="100" class="axis-label axis-label--y" transform="rotate(-90, 14, 100)">Яркость
+                            (%)</text>
                         <path :d="brightnessPath(brightnessChart.day.base, 400, 200)" class="curve curve--base" />
                         <path :d="brightnessPath(brightnessChart.day.curve, 400, 200)" class="curve curve--current" />
                     </svg>
                 </ChartBlock>
 
-                <ChartBlock
-                    title="Вечерняя яркость"
-                    hint="После наступления темноты"
-                    reset-label="Сбросить кривую"
-                    @reset="resetCurve('evening')"
-                >
+                <ChartBlock title="Вечерняя яркость" hint="После наступления темноты" reset-label="Сбросить кривую"
+                    @reset="resetCurve('evening')">
                     <svg viewBox="0 0 400 200" role="img" aria-label="Evening brightness curve">
                         <text x="200" y="195" class="axis-label">Прогресс вечера (0→1)</text>
-                        <text x="14" y="100" class="axis-label axis-label--y" transform="rotate(-90, 14, 100)">Яркость (%)</text>
+                        <text x="14" y="100" class="axis-label axis-label--y" transform="rotate(-90, 14, 100)">Яркость
+                            (%)</text>
                         <path :d="brightnessPath(brightnessChart.evening.base, 400, 200)" class="curve curve--base" />
                         <path :d="brightnessPath(brightnessChart.evening.curve, 400, 200)"
                             class="curve curve--current" />
                     </svg>
                 </ChartBlock>
 
-                <ChartBlock
-                    title="Кривая цветовой температуры"
-                    hint="База от рассвета до заката + локальные сдвиги"
-                    reset-label="Сбросить кривую"
-                    @reset="resetCurve('cct')"
-                >
+                <ChartBlock title="Кривая цветовой температуры" hint="База от рассвета до заката + локальные сдвиги"
+                    reset-label="Сбросить кривую" @reset="resetCurve('cct')">
                     <svg viewBox="0 0 400 200" role="img" aria-label="CCT curve">
                         <text x="200" y="195" class="axis-label">Время суток</text>
-                        <text x="14" y="100" class="axis-label axis-label--y" transform="rotate(-90, 14, 100)">Цветовая температура (K)</text>
+                        <text x="14" y="100" class="axis-label axis-label--y" transform="rotate(-90, 14, 100)">Цветовая
+                            температура
+                            (K)</text>
                         <path
                             :d="cctPath(cctChart.base, 400, 200, scenario.autoLight.params?.minCct || DEFAULT_PARAMS.minCct, scenario.autoLight.params?.maxCct || DEFAULT_PARAMS.maxCct)"
                             class="curve curve--base" />
@@ -1655,5 +1616,4 @@ watch(
         grid-template-columns: 1fr;
     }
 }
-
 </style>

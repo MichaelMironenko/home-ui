@@ -4,11 +4,13 @@ import { trackFunctionCall } from '../lib/requestMetrics'
 import { getConfig } from '../lib/api'
 import { setDocumentDescription, setDocumentTitle } from '../utils/pageTitle'
 import { temperatureToHex } from '../utils/colorUtils'
+import { resolvePauseReason } from '../utils/scenarioStatusDisplay'
 
 const cfg = ref({ base: '', keyHeader: 'x-api-key', keyValue: '' })
 const loading = ref(false)
 const error = ref('')
 const events = ref([])
+const scenarioIndex = ref({ byId: new Map(), byName: new Map() })
 
 watchEffect(() => {
     setDocumentTitle('Журнал сценариев')
@@ -59,6 +61,36 @@ async function apiFetch(path, options = {}) {
     return json
 }
 
+function normalizeScenarioName(name) {
+    return String(name || '').trim().toLowerCase()
+}
+
+async function loadScenarioIndex() {
+    scenarioIndex.value = { byId: new Map(), byName: new Map() }
+    if (!cfg.value.base) return
+    try {
+        const data = await apiFetch('/list')
+        if (!Array.isArray(data?.scenarios)) return
+        const byId = new Map()
+        const byName = new Map()
+        for (const entry of data.scenarios) {
+            const key = String(entry?.key || '').trim()
+            const cleanedId = key.replace(/^scenarios\//, '').replace(/\.json$/i, '')
+            const id = String(entry?.id || cleanedId || '').trim()
+            if (!id) continue
+            const name = String(entry?.name || cleanedId || id || '').trim() || 'Без имени'
+            const normalizedName = normalizeScenarioName(name)
+            const item = { id, name, type: entry?.type || null }
+            byId.set(id, item)
+            if (normalizedName) byName.set(normalizedName, item)
+        }
+        scenarioIndex.value = { byId, byName }
+    } catch (err) {
+        console.warn('[events] loadScenarioIndex failed', err)
+        scenarioIndex.value = { byId: new Map(), byName: new Map() }
+    }
+}
+
 function formatTime(ts) {
     if (!Number.isFinite(ts)) return ''
     const date = new Date(ts)
@@ -90,6 +122,7 @@ const ORIGIN_LABELS = {
   scheduler: 'Таймер',
   save: 'Сохранение',
   resume: 'Возобновление',
+  pause: 'Пауза',
   presence: 'Присутствие',
 }
 
@@ -113,6 +146,15 @@ function normalizeEvents(list) {
         const parsedTs = tsSource ? Date.parse(tsSource) : NaN
         const timestamp = Number.isNaN(parsedTs) ? Date.now() : parsedTs
         const triggerVariant = ORIGIN_VARIANTS[raw?.origin] || 'generic'
+        const origin = String(raw?.origin || '')
+        const pausePayload = raw?.pause || raw?.result?.pause || null
+        const resultReason = raw?.resultReason || raw?.result?.reason || ''
+        const isPauseEvent = Boolean(pausePayload) || resultReason === 'manual_pause' || resultReason === 'autopause' || origin.includes('pause')
+        const isResumeEvent = origin === 'resume'
+        const pauseReason = pausePayload ? resolvePauseReason(pausePayload, { result: { reason: resultReason } }) : ''
+        const statusLabel = isPauseEvent
+            ? (pauseReason ? `Пауза · ${pauseReason}` : 'Пауза')
+            : (isResumeEvent ? 'Возобновление работы' : '')
 
         const baseId = raw?.id || `evt_${timestamp}`
         const dupCount = seenIds.get(baseId) || 0
@@ -122,14 +164,37 @@ function normalizeEvents(list) {
         const normalizedHex = normalizeHexColor(raw?.colorHex)
         const rawColorLabel = typeof raw?.colorLabel === 'string' ? raw.colorLabel : ''
         const colorLabel = normalizeHexColor(rawColorLabel) ? '' : rawColorLabel
-        const scenarioName = raw?.scenarioName || raw?.scenarioId || 'Без имени'
-        const scenarioKey = String(raw?.scenarioId || raw?.scenarioName || scenarioName)
+        const scenarioId = raw?.scenarioId != null
+            ? String(raw.scenarioId)
+            : raw?.scenario_id != null
+                ? String(raw.scenario_id)
+                : raw?.scenario?.id != null
+                    ? String(raw.scenario.id)
+                    : raw?.scenario?.scenarioId != null
+                        ? String(raw.scenario.scenarioId)
+                        : ''
+        const scenarioName = raw?.scenarioName || raw?.scenario?.name || scenarioId || 'Без имени'
+        const normalizedScenarioName = normalizeScenarioName(scenarioName)
+        const indexedByName = normalizedScenarioName
+            ? scenarioIndex.value.byName.get(normalizedScenarioName)
+            : null
+        const indexedById = scenarioId ? scenarioIndex.value.byId.get(scenarioId) : null
+        const resolvedScenarioId = scenarioId || indexedByName?.id || ''
+        const scenarioType =
+            raw?.scenario?.type ||
+            raw?.scenarioType ||
+            indexedById?.type ||
+            indexedByName?.type ||
+            null
+        const scenarioKey = String(scenarioId || raw?.scenarioName || scenarioName)
 
         return {
             id: dedupedId,
             timestamp,
             timeText: formatTime(timestamp),
             scenarioName,
+            scenarioId: resolvedScenarioId,
+            scenarioType,
             scenarioKey,
             triggerVariant,
             triggerLabel: formatTriggerLabel(raw?.origin),
@@ -139,6 +204,8 @@ function normalizeEvents(list) {
             colorTemperature: Number.isFinite(raw?.colorTemperature) ? Number(raw.colorTemperature) : null,
             colorHexDisplay: normalizedHex,
             sensorLux: Number.isFinite(raw?.sensorLux) ? Math.round(raw.sensorLux) : null,
+            statusLabel,
+            _isStatusOnly: isPauseEvent,
         }
     })
 
@@ -173,16 +240,18 @@ function normalizeEvents(list) {
         })
 
         const currentCct = Number.isFinite(event.colorTemperature) ? Math.round(event.colorTemperature) : null
+        const isStatusOnly = Boolean(event._isStatusOnly)
 
         return {
             ...event,
-            brightnessDisplay: showBrightness ? event.brightnessDisplay : '',
-            colorTemperature: showColor ? currentCct : null,
-            colorHexDisplay: showColor ? event.colorHexDisplay : null,
-            colorLabel: showColor ? event.colorLabel : '',
-            _showCctOnly: showColor && currentCct != null && !event.colorHexDisplay && !event.colorLabel,
-            _showColorAny: Boolean(showColor),
-            _showBrightnessAny: Boolean(showBrightness),
+            brightnessDisplay: showBrightness && !isStatusOnly ? event.brightnessDisplay : '',
+            colorTemperature: showColor && !isStatusOnly ? currentCct : null,
+            colorHexDisplay: showColor && !isStatusOnly ? event.colorHexDisplay : null,
+            colorLabel: showColor && !isStatusOnly ? event.colorLabel : '',
+            statusLabel: isStatusOnly ? event.statusLabel : '',
+            _showCctOnly: !isStatusOnly && showColor && currentCct != null && !event.colorHexDisplay && !event.colorLabel,
+            _showColorAny: Boolean(showColor) && !isStatusOnly,
+            _showBrightnessAny: Boolean(showBrightness) && !isStatusOnly,
         }
     })
 
@@ -236,6 +305,8 @@ const groupedEvents = computed(() => {
                 id: `g_${event.scenarioKey}_${event.timestamp}`,
                 scenarioKey: event.scenarioKey,
                 scenarioName: event.scenarioName,
+                scenarioId: event.scenarioId,
+                scenarioType: event.scenarioType,
                 rows: []
             })
         }
@@ -244,6 +315,7 @@ const groupedEvents = computed(() => {
             Boolean(event.triggerIcon) ||
             Boolean(event.brightnessDisplay) ||
             Boolean(event._showColorAny) ||
+            Boolean(event.statusLabel) ||
             event.sensorLux != null
 
         if (!rowHasContent) continue
@@ -260,6 +332,7 @@ const groupedEvents = computed(() => {
             colorTemperature: event.colorTemperature,
             colorHexDisplay: event.colorHexDisplay,
             sensorLux: event.sensorLux,
+            statusLabel: event.statusLabel,
         })
     }
     return groups.filter((group) => group.rows.length > 0)
@@ -268,12 +341,22 @@ const groupedEvents = computed(() => {
 onMounted(async () => {
     await loadConfig()
     if (cfg.value.base) {
+        await loadScenarioIndex()
         await loadEvents()
     }
 })
 
 async function refreshAll() {
+    await loadScenarioIndex()
     await loadEvents()
+}
+
+function scenarioLinkLocation(group) {
+    if (!group?.scenarioId) return null
+    if (group.scenarioType === 'auto-light-v1') {
+        return { name: 'auto-light-edit', params: { id: group.scenarioId } }
+    }
+    return { name: 'scenario-edit', params: { id: group.scenarioId } }
 }
 </script>
 
@@ -299,47 +382,61 @@ async function refreshAll() {
 
         <section class="timeline" v-else>
             <p v-if="!hasEvents" class="empty">Нет событий за выбранный период.</p>
-            <article v-for="group in groupedEvents" :key="group.id" class="event-card">
-                <div class="event-head">
-                    <span class="event-name event-name--inline" :title="group.scenarioName">{{ group.scenarioName }}</span>
-                </div>
-	                <div class="event-rows">
-	                    <div v-for="row in group.rows" :key="row.id" class="event-row-line">
-	                        <div class="event-row-left">
-	                            <span class="event-row-time">{{ row.timeText }}</span>
-	                            <span
-	                                v-if="row.triggerIcon"
-	                                class="event-trigger-icon"
-	                                :title="row.triggerLabel"
-	                                aria-hidden="true"
-	                            >{{ row.triggerIcon }}</span>
-	                        </div>
-	                        <div class="event-metrics">
-	                            <span v-if="row.brightnessDisplay" class="metric metric-brightness">
-	                                <span class="metric-icon" aria-hidden="true">💡</span>
-	                                <span class="metric-value">{{ row.brightnessDisplay }}</span>
-	                            </span>
-	                            <span v-if="row._showColorAny" class="metric metric-color">
-	                                <span v-if="row.colorHexDisplay || row.colorTemperature" class="color-swatch"
-	                                    :class="{ temperature: !row.colorHexDisplay }" :style="colorSwatchStyle(row)"></span>
-	                                <span v-if="row.colorLabel || row._showCctOnly" class="metric-value">
-	                                    <template v-if="row.colorLabel">{{ row.colorLabel }}</template>
-	                                    <template v-else-if="row._showCctOnly">{{ row.colorTemperature }}K</template>
-	                                </span>
-	                            </span>
-	                            <span v-if="row.sensorLux != null" class="metric">
-	                                <span class="metric-icon" aria-hidden="true">
-	                                    <svg viewBox="0 0 24 24" role="presentation">
+            <article
+                v-for="group in groupedEvents"
+                :key="group.id"
+                class="event-card"
+                :class="{ 'event-card--clickable': Boolean(group.scenarioId) }"
+            >
+                <component
+                    :is="group.scenarioId ? 'RouterLink' : 'div'"
+                    class="event-card-link"
+                    :to="group.scenarioId ? scenarioLinkLocation(group) : undefined"
+                >
+                    <div class="event-head">
+                        <span class="event-name event-name--inline" :title="group.scenarioName">{{ group.scenarioName }}</span>
+                    </div>
+                    <div class="event-rows">
+                        <div v-for="row in group.rows" :key="row.id" class="event-row-line">
+                            <div class="event-row-left">
+                                <span class="event-row-time">{{ row.timeText }}</span>
+                                <span
+                                    v-if="row.triggerIcon"
+                                    class="event-trigger-icon"
+                                    :title="row.triggerLabel"
+                                    aria-hidden="true"
+                                >{{ row.triggerIcon }}</span>
+                            </div>
+                            <div class="event-metrics">
+                                <span v-if="row.statusLabel" class="metric metric-status">
+                                    <span class="metric-value">{{ row.statusLabel }}</span>
+                                </span>
+                                <span v-if="row.brightnessDisplay" class="metric metric-brightness">
+                                    <span class="metric-icon" aria-hidden="true">💡</span>
+                                    <span class="metric-value">{{ row.brightnessDisplay }}</span>
+                                </span>
+                                <span v-if="row._showColorAny" class="metric metric-color">
+                                    <span v-if="row.colorHexDisplay || row.colorTemperature" class="color-swatch"
+                                        :class="{ temperature: !row.colorHexDisplay }" :style="colorSwatchStyle(row)"></span>
+                                    <span v-if="row.colorLabel || row._showCctOnly" class="metric-value">
+                                        <template v-if="row.colorLabel">{{ row.colorLabel }}</template>
+                                        <template v-else-if="row._showCctOnly">{{ row.colorTemperature }}K</template>
+                                    </span>
+                                </span>
+                                <span v-if="row.sensorLux != null" class="metric">
+                                    <span class="metric-icon" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" role="presentation">
                                         <path
                                             d="M12 4.5a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0v-1a1 1 0 0 1 1-1Zm6.364 3.136a1 1 0 0 1 0 1.414l-.707.707a1 1 0 0 1-1.414-1.414l.707-.707a1 1 0 0 1 1.414 0ZM18.5 13a1 1 0 0 1 0 2h-1a1 1 0 1 1 0-2h1Zm-12 0a1 1 0 1 1 0 2H5.5a1 1 0 0 1 0-2h1Zm1.257-5.243a1 1 0 0 1 0 1.414l-.707.707a1 1 0 0 1-1.414-1.414l.707-.707a1 1 0 0 1 1.414 0ZM12 9a4 4 0 1 1 0 8 4 4 0 0 1 0-8Zm0 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm-1 6.5h2V20a1 1 0 1 1-2 0v-2.5Z" />
-                                    </svg>
+                                        </svg>
+                                    </span>
+                                    <span class="metric-value">{{ row.sensorLux }} lx</span>
                                 </span>
-	                                <span class="metric-value">{{ row.sensorLux }} lx</span>
-	                            </span>
-	                        </div>
-	                    </div>
-	                </div>
-	            </article>
+                            </div>
+                        </div>
+                    </div>
+                </component>
+            </article>
 	        </section>
     </main>
 </template>
@@ -528,6 +625,34 @@ async function refreshAll() {
     display: flex;
     flex-direction: column;
     gap: 8px;
+}
+
+.event-card-link {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    color: inherit;
+    text-decoration: none;
+}
+
+.event-card--clickable {
+    cursor: pointer;
+    transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.event-card--clickable:hover {
+    border-color: var(--surface-border-strong);
+    background: var(--surface-hover);
+}
+
+.event-card--clickable:focus-visible {
+    outline: 2px solid var(--primary-strong);
+    outline-offset: 2px;
+}
+
+.event-card--clickable .event-card-link:focus-visible {
+    outline: 2px solid var(--primary-strong);
+    outline-offset: 2px;
 }
 
 .event-card:hover .event-name {

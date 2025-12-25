@@ -19,7 +19,6 @@ const isScenariosRoute = computed(() => {
     const path = route.path || ''
     return (
         path.startsWith('/scenarios') ||
-        path.startsWith('/legacy-scenarios') ||
         path.startsWith('/auto-light')
     )
 })

@@ -9,7 +9,6 @@ const CapabilitiesView = () => import('./views/CapabilitiesView.vue')
 const HomeView = () => import('./views/HomeView.vue')
 const ScenariosListView = () => import('./views/ScenariosListView.vue')
 const ScenarioView = () => import('./views/ScenarioView.vue')
-const ScenarioLegacyView = () => import('./views/ScenarioLegacyView.vue')
 const AutoLightScenarioView = () => import('./views/AutoLightScenarioView.vue')
 const EventsView = () => import('./views/EventsView.vue')
 const NotFoundView = () => import('./views/NotFoundView.vue')
@@ -25,8 +24,6 @@ const router = createRouter({
     { path: '/scenarios', name: 'scenarios-list', component: ScenariosListView },
     { path: '/scenarios/new', name: 'scenario-create', component: ScenarioView },
     { path: '/scenarios/:id', name: 'scenario-edit', component: ScenarioView, props: true },
-    { path: '/legacy-scenarios/new', name: 'scenario-create-legacy', component: ScenarioLegacyView },
-    { path: '/legacy-scenarios/:id', name: 'scenario-edit-legacy', component: ScenarioLegacyView, props: true },
     { path: '/auto-light/new', name: 'auto-light-create', component: AutoLightScenarioView },
     { path: '/auto-light/:id', name: 'auto-light-edit', component: AutoLightScenarioView, props: true },
     { path: '/profile', name: 'profile', component: ProfileView },

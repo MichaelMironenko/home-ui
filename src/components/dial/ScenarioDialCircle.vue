@@ -78,7 +78,11 @@ const HALF_DAY_MINUTES = MINUTES_PER_DAY / 2
 const FULL_CIRCLE_DEG = 360
 const HANDLE_EMIT_THROTTLE_MS = 80
 const AUTO_BRIGHTNESS_WARM_HEX = '#fff4dd'
-const CHEVRON_STEP_MINUTES = 30
+const CHEVRON_STEP_MINUTES = 1
+const CHEVRON_TAIL_MINUTES = 15
+const CHEVRON_CYCLE_MS = 1800
+const CHEVRON_MIN_STEP_MS = 10
+const CHEVRON_MAX_STEP_MS = 100
 
 const dialElement = ref(null)
 const dialMetrics = reactive({
@@ -161,14 +165,8 @@ const geom = computed(() => {
 
 const startMinutes = computed(() => stopMinutes(localStartStop))
 const endMinutes = computed(() => stopMinutes(localEndStop))
-const startLabel = computed(() => stopLabel(localStartStop))
-const endLabel = computed(() => stopLabel(localEndStop))
-const startLabelCompact = computed(
-    () => localStartStop?.mode !== 'clock' && (localStartStop?.offset || 0) !== 0
-)
-const endLabelCompact = computed(
-    () => localEndStop?.mode !== 'clock' && (localEndStop?.offset || 0) !== 0
-)
+const startLabel = computed(() => stopLabelData(localStartStop))
+const endLabel = computed(() => stopLabelData(localEndStop))
 const startAnchorActive = computed(() => isAnchoredStop(localStartStop))
 const endAnchorActive = computed(() => isAnchoredStop(localEndStop))
 const startAnchorTarget = computed(() => {
@@ -189,6 +187,7 @@ const gradientStartColor = computed(() => stopColorHex(localStartStop))
 const gradientEndColor = computed(() => stopColorHex(localEndStop))
 const dialInactive = computed(() => ['off', 'paused'].includes(props.scenarioStatus))
 const isPaused = computed(() => props.scenarioStatus === 'paused')
+const isRunning = computed(() => props.scenarioStatus === 'running')
 
 function readDialMetrics() {
     const el = dialElement.value
@@ -293,6 +292,7 @@ const scenarioArc = computed(() => {
 })
 
 const scenarioChevrons = computed(() => {
+    if (!isRunning.value) return []
     const radius = geom.value.scheduleRadius
     const width = geom.value.scheduleStrokeWidth
     const spanMinutes = scenarioSpanMinutes.value
@@ -316,6 +316,52 @@ const scenarioChevrons = computed(() => {
     }
     return marks
 })
+
+const activeChevronIndex = ref(0)
+let chevronTimerId = 0
+
+const chevronStepInterval = computed(() => {
+    const spanMinutes = scenarioSpanMinutes.value
+    if (!Number.isFinite(spanMinutes) || spanMinutes <= 0) return CHEVRON_MAX_STEP_MS
+    const stepCount = Math.max(1, Math.round(spanMinutes / CHEVRON_STEP_MINUTES))
+    const scaled = CHEVRON_CYCLE_MS / stepCount
+    return Math.min(CHEVRON_MAX_STEP_MS, Math.max(CHEVRON_MIN_STEP_MS, scaled))
+})
+
+const stopChevronTimer = () => {
+    if (chevronTimerId) {
+        clearInterval(chevronTimerId)
+        chevronTimerId = 0
+    }
+}
+
+const startChevronTimer = () => {
+    stopChevronTimer()
+    const count = scenarioChevrons.value.length
+    if (!count || dialInactive.value || !isRunning.value) return
+    if (activeChevronIndex.value >= count) activeChevronIndex.value = 0
+    chevronTimerId = setInterval(() => {
+        activeChevronIndex.value = (activeChevronIndex.value + 1) % count
+    }, chevronStepInterval.value)
+}
+
+watch([() => scenarioChevrons.value.length, dialInactive, chevronStepInterval], startChevronTimer, { immediate: true })
+
+onUnmounted(() => stopChevronTimer())
+
+const chevronClass = (index) => {
+    const count = scenarioChevrons.value.length
+    if (!count) return {}
+    const activeIndex = activeChevronIndex.value % count
+    const tailOffset = Math.max(1, Math.round(CHEVRON_TAIL_MINUTES / CHEVRON_STEP_MINUTES))
+    const tail1Index = count > tailOffset ? (activeIndex - tailOffset + count) % count : -1
+    const tail2Index = count > tailOffset * 2 ? (activeIndex - tailOffset * 2 + count) % count : -1
+    return {
+        'is-active': index === activeIndex,
+        'is-tail-1': index === tail1Index,
+        'is-tail-2': index === tail2Index
+    }
+}
 
 const scenarioArcGradientVector = computed(() => {
     if (autoOnlyBrightnessArc.value) return null
@@ -359,6 +405,7 @@ const scenarioBoundaryMarks = computed(() => {
         }
     }
 })
+
 
 const dialStyleVars = computed(() => {
     return {
@@ -908,17 +955,21 @@ function stopMinutes(stop) {
     return normalizeMinutes(stop.clockMinutes || 0)
 }
 
-function stopLabel(stop) {
-    if (!stop) return ''
-    if (stop.mode === 'clock') return minutesToTimeString(stopMinutes(stop))
+function stopLabelData(stop) {
+    if (!stop) return { time: '', meta: '', isSun: false, anchor: '' }
+    if (stop.mode === 'clock') {
+        return { time: minutesToTimeString(stopMinutes(stop)), meta: '', isSun: false, anchor: '' }
+    }
     const isSunrise = stop.mode === 'sunrise'
     const anchorWord = isSunrise ? 'рассвета' : 'заката'
     const anchorLabel = isSunrise ? 'Рассвет' : 'Закат'
+    const anchorType = isSunrise ? 'sunrise' : 'sunset'
     const anchorMinutes = isSunrise ? props.sunriseMinute : props.sunsetMinute
-    const anchorTime = minutesToTimeString(anchorMinutes || 0)
     const offset = stop.offset || 0
     const actualTime = minutesToTimeString(normalizeMinutes((anchorMinutes || 0) + offset))
-    if (offset === 0) return `${anchorLabel} (${anchorTime})`
+    if (offset === 0) {
+        return { time: actualTime, meta: anchorLabel, isSun: true, anchor: anchorType }
+    }
     const abs = Math.abs(offset)
     const hours = Math.floor(abs / 60)
     const minutes = abs % 60
@@ -927,7 +978,7 @@ function stopLabel(stop) {
     else if (hours) unit = `${hours} ч`
     else unit = `${minutes || abs} мин`
     const phrase = offset > 0 ? `${unit} после ${anchorWord}` : `${unit} до ${anchorWord}`
-    return `${phrase} (${actualTime})`
+    return { time: actualTime, meta: phrase, isSun: true, anchor: anchorType }
 }
 
 function minutesToTimeString(minute) {
@@ -942,12 +993,80 @@ function minutesToTimeString(minute) {
     <section class="dial-section">
         <div class="time-header">
             <button type="button" class="time-chip start" @click="emit('open-start-editor')">
-                <span>Старт</span>
-                <strong :class="{ compact: startLabelCompact }">{{ startLabel }}</strong>
+                <span class="time-chip-label">Старт</span>
+                <div class="time-chip-value">
+                    <div class="time-chip-main" :class="{ offset: startLabel.isSun }">
+                        <strong class="time-chip-time">{{ startLabel.time }}</strong>
+                        <span v-if="startLabel.isSun" class="time-chip-sun" aria-hidden="true">
+                            <svg v-if="startLabel.anchor === 'sunrise'" viewBox="0 0 32 32" class="sun-icon"
+                                aria-hidden="true">
+                                <g class="sun-core">
+                                    <path d="M6 18h20" />
+                                    <path d="M9 18a7 7 0 0 1 14 0" />
+                                </g>
+                                <g class="sun-rays">
+                                    <path d="M16 6v4M10 8l2 3M22 8l-2 3" />
+                                </g>
+                                <g class="sun-arrow" transform="translate(0 3)">
+                                    <path d="M16 27v-7" />
+                                    <path d="M12.5 21.5L16 18l3.5 3.5" />
+                                </g>
+                            </svg>
+                            <svg v-else viewBox="0 0 32 32" class="sun-icon" aria-hidden="true">
+                                <g class="sun-core">
+                                    <path d="M6 18h20" />
+                                    <path d="M9 18a7 7 0 0 1 14 0" />
+                                </g>
+                                <g class="sun-rays">
+                                    <path d="M16 6v4M10 8l2 3M22 8l-2 3" />
+                                </g>
+                                <g class="sun-arrow" transform="translate(0 3)">
+                                    <path d="M16 21v7" />
+                                    <path d="M12.5 26.5L16 30l3.5-3.5" />
+                                </g>
+                            </svg>
+                        </span>
+                    </div>
+                    <span v-if="startLabel.meta" class="time-chip-meta">{{ startLabel.meta }}</span>
+                </div>
             </button>
             <button type="button" class="time-chip end" @click="emit('open-end-editor')">
-                <span>Финиш</span>
-                <strong :class="{ compact: endLabelCompact }">{{ endLabel }}</strong>
+                <span class="time-chip-label">Финиш</span>
+                <div class="time-chip-value">
+                    <div class="time-chip-main" :class="{ offset: endLabel.isSun }">
+                        <strong class="time-chip-time">{{ endLabel.time }}</strong>
+                        <span v-if="endLabel.isSun" class="time-chip-sun" aria-hidden="true">
+                            <svg v-if="endLabel.anchor === 'sunrise'" viewBox="0 0 32 32" class="sun-icon"
+                                aria-hidden="true">
+                                <g class="sun-core">
+                                    <path d="M6 18h20" />
+                                    <path d="M9 18a7 7 0 0 1 14 0" />
+                                </g>
+                                <g class="sun-rays">
+                                    <path d="M16 6v4M10 8l2 3M22 8l-2 3" />
+                                </g>
+                                <g class="sun-arrow" transform="translate(0 1.5)">
+                                    <path d="M16 27v-7" />
+                                    <path d="M12.5 21.5L16 18l3.5 3.5" />
+                                </g>
+                            </svg>
+                            <svg v-else viewBox="0 0 32 32" class="sun-icon" aria-hidden="true">
+                                <g class="sun-core">
+                                    <path d="M6 18h20" />
+                                    <path d="M9 18a7 7 0 0 1 14 0" />
+                                </g>
+                                <g class="sun-rays">
+                                    <path d="M16 6v4M10 8l2 3M22 8l-2 3" />
+                                </g>
+                                <g class="sun-arrow" transform="translate(0 1.5)">
+                                    <path d="M16 21v7" />
+                                    <path d="M12.5 26.5L16 30l3.5-3.5" />
+                                </g>
+                            </svg>
+                        </span>
+                    </div>
+                    <span v-if="endLabel.meta" class="time-chip-meta">{{ endLabel.meta }}</span>
+                </div>
             </button>
         </div>
 
@@ -955,7 +1074,7 @@ function minutesToTimeString(minute) {
             @pointermove="handleDialPointerMove" @pointerup="handleDialPointerUp"
             @pointercancel="handleDialPointerCancel" @pointerleave="handleDialPointerLeave">
             <button v-if="isPaused" type="button" class="pause-overlay" @click="emit('resume')">
-                ⏯
+                ▶
             </button>
 
             <div class="outer-ring"></div>
@@ -983,8 +1102,8 @@ function minutesToTimeString(minute) {
                 <g v-if="scenarioChevrons.length" class="scenario-chevrons">
                     <g v-for="(item, index) in scenarioChevrons" :key="`chevron-${index}`"
                         :transform="`translate(${item.x} ${item.y}) rotate(${item.rotate})`">
-                        <path class="scenario-chevron" :d="item.path" :filter="`url(#${chevronShadowId})`"
-                            :style="{ animationDelay: `${index * 0.16}s` }" />
+                        <path class="scenario-chevron" :class="chevronClass(index)" :d="item.path"
+                            :filter="`url(#${chevronShadowId})`" />
                     </g>
                 </g>
                 <g v-if="scenarioBoundaryMarks" class="scenario-boundaries">
@@ -1057,7 +1176,7 @@ function minutesToTimeString(minute) {
     align-items: center;
 }
 
-.time-chip span {
+.time-chip-label {
     display: block;
     font-size: 12px;
     color: #a5b4fc;
@@ -1065,16 +1184,62 @@ function minutesToTimeString(minute) {
     letter-spacing: 0.08em;
 }
 
-.time-chip strong {
-    display: block;
-    margin-top: 4px;
-    font-size: 18px;
-    font-weight: 600;
+.time-chip-value {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
 }
 
-.time-chip strong.compact {
-    font-size: 14px;
-    line-height: 1.35;
+.time-chip-main {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 24px;
+}
+
+.time-chip-main.offset {
+    padding-left: 6px;
+}
+
+.time-chip-time {
+    display: block;
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.time-chip-sun {
+    font-size: 18px;
+    line-height: 1;
+    color: #f59e0b;
+    margin-top: 0;
+    display: inline-flex;
+    align-items: center;
+}
+
+.sun-icon {
+    width: 24px;
+    height: 24px;
+    stroke: currentColor;
+    stroke-width: 2.2;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transform: translateY(-2px);
+}
+
+.sun-core,
+.sun-arrow,
+.sun-rays {
+    stroke: #f9c316;
+}
+
+.time-chip-meta {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 500;
 }
 
 .dial {
@@ -1102,12 +1267,16 @@ function minutesToTimeString(minute) {
     width: 20%;
     aspect-ratio: 1 / 1;
     border-radius: 50%;
-    border: 2px solid rgba(255, 255, 255, 0.7);
-    background: rgba(0, 0, 0, 0.5);
-    color: #e5e7eb;
+    border: 2px solid #111827;
+    background: #f59e0b;
+    color: #111827;
     font-size: clamp(18px, 5vw, 28px);
     z-index: 6;
     cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding-left: 5px;
 }
 
 .dial.inactive {
@@ -1149,9 +1318,6 @@ function minutesToTimeString(minute) {
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow:
-        inset 0 0 160px rgba(0, 0, 0, 0.5),
-        inset 0 0 40px rgba(255, 255, 255, 0.05);
     overflow: hidden;
 }
 
@@ -1189,20 +1355,6 @@ function minutesToTimeString(minute) {
 
     100% {
         opacity: 0.6;
-    }
-}
-
-@keyframes chevron-wave {
-    0% {
-        opacity: 0.15;
-    }
-
-    40% {
-        opacity: 1;
-    }
-
-    100% {
-        opacity: 0.15;
     }
 }
 
@@ -1248,8 +1400,19 @@ function minutesToTimeString(minute) {
     stroke-width: 1.6px;
     stroke-linecap: round;
     stroke-linejoin: round;
-    opacity: 0.15;
-    animation: chevron-wave 1.8s ease-in-out infinite;
+    opacity: 0;
+}
+
+.scenario-chevron.is-active {
+    opacity: 0.85;
+}
+
+.scenario-chevron.is-tail-1 {
+    opacity: 0.5;
+}
+
+.scenario-chevron.is-tail-2 {
+    opacity: 0.25;
 }
 
 .scenario-cap {
@@ -1295,7 +1458,18 @@ function minutesToTimeString(minute) {
 }
 
 .dial.inactive .scenario-chevron {
+    opacity: 0;
+}
+
+.dial.inactive .scenario-chevron.is-active {
     opacity: 0.45;
-    animation: none;
+}
+
+.dial.inactive .scenario-chevron.is-tail-1 {
+    opacity: 0.28;
+}
+
+.dial.inactive .scenario-chevron.is-tail-2 {
+    opacity: 0.14;
 }
 </style>
