@@ -111,7 +111,7 @@
 
 ### `src/utils/scenarioStatusDisplay.js`
 - Normalizes scenario status payloads, builds labels (`summarizeStatusRecord`, `deriveScenarioListStatus`), resolves pause reasons, and exports helpers for testing.
-- Treats both `manual_pause` and the new `autopause` reason as pausing indicators so the dashboard can explain why a scenario stopped without hiding the distinction between user-set pauses and automatic overrides.
+- Treats both `app_button_pause` and the new `autopause` reason as pausing indicators so the dashboard can explain why a scenario stopped without hiding the distinction between user-set pauses and automatic overrides.
 
 ### `src/utils/stopStateRules.js`
 - Mutators that lock color/brightness usage between start and end stops and toggle auto-brightness metadata.

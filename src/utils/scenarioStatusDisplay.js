@@ -8,10 +8,11 @@ const PAUSE_REASON_LABELS = {
     manual_control: 'Свет изменен вручную',
     presence: 'Никого нет дома',
     presence_guard: 'Никого нет дома',
-    away: 'Никого нет дома'
+    away: 'Никого нет дома',
+    presence_away: 'Никого нет дома'
 }
 
-const PAUSE_MANUAL_SOURCES = new Set(['manual', 'manual_pause'])
+const PAUSE_MANUAL_SOURCES = new Set(['manual', 'manual_pause', 'app_button_pause'])
 
 const CURRENT_WINDOW_KEYS = ['window', 'currentWindow', 'activeWindow']
 const NEXT_WINDOW_KEYS = ['nextWindow', 'upcomingWindow', 'next']
@@ -91,7 +92,8 @@ export function deriveScenarioListStatus(item, nowInput = Date.now()) {
     const now = typeof nowInput === 'number' ? nowInput : parseTimestamp(nowInput) || Date.now()
     if (!item) return buildStatus('waiting', 'Завершен')
     if (item.disabled) return buildStatus('off', 'Выключен')
-    if (item.pause) {
+    const statusReason = item.status?.result?.reason || null
+    if (item.pause || statusReason === 'app_button_pause' || statusReason === 'autopause') {
         const reason = resolvePauseReason(item.pause, item.status)
         const label = reason ? `Пауза · ${reason}` : 'Пауза'
         return buildStatus('paused', label)

@@ -3,6 +3,8 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from
 import { useRoute, useRouter } from 'vue-router'
 import { getConfig } from '../lib/api'
 import { computeEnvironment, createDefaultScenario, normalizeScenarioStruct } from '../utils/scenarioUtils'
+import { temperatureToHex } from '../utils/colorUtils'
+import { normalizeEvents, normalizeScenarioName as normalizeEventScenarioName } from '../utils/events'
 import { trackFunctionCall } from '../lib/requestMetrics'
 import {
     hasBrightnessCapability,
@@ -49,6 +51,7 @@ const routeScenarioId = computed(() => {
 })
 const isCreateMode = computed(() => route.name === 'scenario-create')
 const scenarioApiReady = ref(false)
+const scenarioLoading = ref(!isCreateMode.value && !!routeScenarioId.value)
 
 const presenceConfigured = computed(() => !!profileStore.presenceConfigured.value)
 const PRESENCE_SETUP_TOOLTIP = 'Для работы сценария по присутствию сначала нужно настроить его в профиле'
@@ -329,12 +332,30 @@ function resolveScenarioSelection() {
     return { groups: groupSet, devices: deviceSet }
 }
 
+function setsEqual(left, right) {
+    if (left === right) return true
+    if (!left || !right || left.size !== right.size) return false
+    for (const value of left) {
+        if (!right.has(value)) return false
+    }
+    return true
+}
+
 function syncSelectedDevicesFromSources(force = false) {
     if (!force && selectionDirty.value) return
+    const prevGroups = new Set(selectedGroupIds.value)
+    const prevDevices = new Set(selectedDevicesIds.value)
     const resolved = resolveScenarioSelection()
     selectedGroupIds.value = new Set(resolved.groups)
     selectedDevicesIds.value = new Set(resolved.devices)
     sanitizeSelectionSets()
+    if (!selectionDirty.value && baselineComparable.value) {
+        const groupsChanged = !setsEqual(prevGroups, selectedGroupIds.value)
+        const devicesChanged = !setsEqual(prevDevices, selectedDevicesIds.value)
+        if (groupsChanged || devicesChanged) {
+            markBaseline()
+        }
+    }
 }
 
 function handleGroupToggle(group, checked) {
@@ -495,6 +516,10 @@ const saveToastId = ref(0)
 let saveToastTimer = null
 const catalogLoading = ref(false)
 const catalogError = ref('')
+const events = ref([])
+const eventsError = ref('')
+const eventsLoading = ref(false)
+let eventsInterval = null
 const catalogGroupSignature = computed(() =>
     (catalog.groups || [])
         .map((group) => {
@@ -578,6 +603,59 @@ async function apiFetch(path, options = {}) {
     return json
 }
 
+const eventsScenarioIndex = computed(() => {
+    const byId = new Map()
+    const byName = new Map()
+    const nameKey = normalizeEventScenarioName(scenario.name || '')
+    const scenarioId = scenario.id ? String(scenario.id) : ''
+    if (scenarioId) {
+        byId.set(scenarioId, { id: scenarioId, name: scenario.name || '', type: scenario.type || null })
+    }
+    if (nameKey) {
+        byName.set(nameKey, { id: scenarioId, name: scenario.name || '', type: scenario.type || null })
+    }
+    return { byId, byName }
+})
+
+async function loadScenarioEvents() {
+    if (!config.base) return
+    if (!events.value.length) eventsLoading.value = true
+    eventsError.value = ''
+    try {
+        const data = await apiFetch('/events')
+        events.value = normalizeEvents(data?.events || [], eventsScenarioIndex.value)
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        eventsError.value = `Ошибка загрузки истории: ${message}`
+    } finally {
+        eventsLoading.value = false
+    }
+}
+
+const latestScenarioEvent = computed(() => {
+    const list = events.value || []
+    if (!list.length) return null
+    const scenarioId = scenario.id ? String(scenario.id) : ''
+    const nameKey = normalizeEventScenarioName(scenario.name || '')
+    return (
+        list.find((event) => {
+            if (scenarioId && event.scenarioId === scenarioId) return true
+            if (nameKey && normalizeEventScenarioName(event.scenarioName) === nameKey) return true
+            return false
+        }) || null
+    )
+})
+
+const dialCurrentState = computed(() => {
+    const event = latestScenarioEvent.value
+    if (!event) return null
+    const brightness = event.brightnessDisplay || ''
+    const temperature = Number.isFinite(event.colorTemperature) ? Math.round(event.colorTemperature) : null
+    const colorHex = event.colorHexDisplay || (temperature != null ? temperatureToHex(temperature) : null)
+    if (!brightness && !colorHex) return null
+    return { brightness, colorHex, temperature }
+})
+
 function getScenarioPayload() {
     return buildScenarioPayload({
         scenario,
@@ -633,10 +711,12 @@ function resetScenarioState() {
 async function loadScenarioById(id) {
     if (!scenarioApiReady.value) return
     if (!id) {
+        scenarioLoading.value = false
         resetScenarioState()
         return
     }
     scenarioError.value = ''
+    scenarioLoading.value = true
     try {
         const response = await scenarioRequest(`/scenario?id=${encodeURIComponent(id)}`)
         const data = response?.scenario
@@ -661,6 +741,8 @@ async function loadScenarioById(id) {
     } catch (err) {
         console.error('Failed to load scenario', err)
         scenarioError.value = err?.message || 'Не удалось загрузить сценарий'
+    } finally {
+        scenarioLoading.value = false
     }
 }
 
@@ -729,7 +811,6 @@ watch(hasUnsavedChanges, (dirty) => {
 onMounted(async () => {
     await loadConfig()
     loadCatalog()
-    profileStore.loadProfile().catch(() => { })
     try {
         const env = computeEnvironment({})
         envInfo.value = env
@@ -742,12 +823,16 @@ onMounted(async () => {
         await loadScenarioConfig()
         scenarioApiReady.value = true
         await loadScenarioById(routeScenarioId.value)
+        await loadScenarioEvents()
     } catch (err) {
         console.warn('Scenario config failed', err)
     }
     timeTickerInterval = setInterval(() => {
         timeTicker.value = Date.now()
-    }, 30 * 1000)
+    }, 60 * 1000)
+    eventsInterval = setInterval(() => {
+        loadScenarioEvents()
+    }, 60 * 1000)
 })
 
 watch(
@@ -764,6 +849,10 @@ onUnmounted(() => {
     if (timeTickerInterval) {
         clearInterval(timeTickerInterval)
         timeTickerInterval = null
+    }
+    if (eventsInterval) {
+        clearInterval(eventsInterval)
+        eventsInterval = null
     }
     if (saveToastTimer) {
         clearTimeout(saveToastTimer)
@@ -1112,6 +1201,7 @@ const sensorOptions = computed(() =>
 watch(
     sensorOptions,
     (list) => {
+        if (!autoBrightness.enabled) return
         if (autoBrightness.sensorId && list.some((item) => item.id === autoBrightness.sensorId)) return
         autoBrightness.sensorId = list[0]?.id || ''
     },
@@ -1145,7 +1235,7 @@ async function toggleRuntimePause() {
             scenarioPauseInfo.value = res?.result?.pause ?? res?.pause ?? null
             if (res?.status) scenarioStatusSummary.value = summarizeStatusRecord(res.status)
             const pauseReason = res?.result?.reason
-            scenarioMessage.value = (pauseReason === 'manual_pause' || pauseReason === 'autopause')
+            scenarioMessage.value = (pauseReason === 'app_button_pause' || pauseReason === 'autopause')
                 ? 'Сценарий по-прежнему на паузе'
                 : 'Пауза снята'
         } else {
@@ -1171,107 +1261,114 @@ function handleResumeFromDial() {
 
 <template>
     <main class="scenario-dial-page" :class="{ 'scenario-disabled': scenarioDisabled }">
-        <div class="title-row">
-            <div class="scenario-name-wrap">
-                <input v-if="editingName" ref="nameInputRef" v-model="scenarioNameValue" maxlength="30"
-                    class="scenario-name-input" type="text" placeholder="Название сценария" @blur="finishEditingName"
-                    @keyup.enter="finishEditingName" />
-                <button v-else :class="['scenario-name-display', { placeholder: !scenarioNameValue }]" type="button"
-                    @click="editingName = true">
-                    {{ scenarioNameUiLabel }}
-                </button>
-            </div>
-            <div class="status-text" :style="{ color: scenarioStatusColor }">
-                <span>{{ isCreateMode ? 'Новый сценарий (не сохранен)' : scenarioStatusText }}</span>
-            </div>
-            <div class="status-actions">
-                <button v-if="canControlRuntime && (runtimePaused || scenarioRuntimeStatus?.kind === 'running')"
-                    type="button"
-                    class="status-icon-btn"
-                    :title="runtimePaused ? 'Возобновить' : 'Пауза'" @click="toggleRuntimePause"
-                    :disabled="scenarioDisplayStatus === 'off' || pausing">
-                    <span v-if="runtimePaused">▶</span>
-                    <span v-else>⏸</span>
-                </button>
-                <button type="button" class="status-icon-btn power" :disabled="powerToggling"
-                    :title="scenarioDisplayStatus === 'off' ? 'Включить' : 'Выключить'" @click="toggleScenarioPower">
-                    <span>{{ scenarioDisplayStatus === 'off' ? '⏻' : '⏼' }}</span>
-                </button>
+        <div v-if="scenarioLoading" class="scenario-loading">
+            <div class="scenario-loading-card" role="status" aria-live="polite">
+                <span class="scenario-loading-spinner" aria-hidden="true"></span>
+                <p>Загружаем сценарий…</p>
             </div>
         </div>
-
-        <div class="dial-layout">
-            <div class="dial-column">
-                <div class="dial-card">
-                    <ScenarioDialCircle :start-stop="startStop" :end-stop="endStop"
-                        :auto-brightness="autoBrightnessActive" :current-status-label="scenarioStatusLabel"
-                        :scenario-status="scenarioDialStatus" :sunrise-minute="sunriseTime" :sunset-minute="sunsetTime"
-                        :dial-face-ratio="dialFaceRatio" :current-minute="currentWorldMinute"
-                        :scenario-segment-radius="130" @update:start-stop="handleStartStopUpdate"
-                        @update:end-stop="handleEndStopUpdate" @change="handleDialChange"
-                        @open-start-editor="openModal('state', 'start')" @open-end-editor="openModal('state', 'end')"
-                        @resume="handleResumeFromDial" />
-                </div>
-            </div>
-            <div class="settings-column">
-                <section class="compact-section">
-                    <StopPreviewList :start-summary="startStateSummary" :end-summary="endStateSummary"
-                        :auto-brightness-active="autoBrightnessActive" @open-start="openModal('state', 'start')"
-                        @open-end="openModal('state', 'end')" />
-
-                    <TargetDevicesCard :loading="catalogLoading" :error="catalogError" :summary="selectedTargetsLabel"
-                        @open="openModal('devices')" />
-
-                    <RunScheduleCard :summary="scheduleSummary" @open="openModal('schedule')" />
-                </section>
-
-                <div class="scenario-feedback">
-                    <p v-if="scenarioError" class="status-info error">{{ scenarioError }}</p>
-                    <button v-if="scenario.id" type="button" class="scenario-delete-text" @click="handleDelete">
-                        Удалить сценарий
+        <template v-else>
+            <div class="title-row">
+                <div class="scenario-name-wrap">
+                    <input v-if="editingName" ref="nameInputRef" v-model="scenarioNameValue" maxlength="30"
+                        class="scenario-name-input" type="text" placeholder="Название сценария" @blur="finishEditingName"
+                        @keyup.enter="finishEditingName" />
+                    <button v-else :class="['scenario-name-display', { placeholder: !scenarioNameValue }]" type="button"
+                        @click="editingName = true">
+                        {{ scenarioNameUiLabel }}
                     </button>
                 </div>
-
-                <ScenarioActionsFooter v-if="hasUnsavedChanges || scenarioSaving" class="scenario-actions-footer"
-                    :create-mode="isCreateMode" :saving="scenarioSaving" :dirty="hasUnsavedChanges"
-                    @save="handleSave" @cancel="handleCancel" />
-            </div>
-        </div>
-
-        <StopStateSheet :open="activeModal === 'state'" v-if="currentStopForModal" :stop="currentStopForModal"
-            :palette="colorPalette" :time="scenario.time" :context="modalPayload === 'start' ? 'start' : 'end'"
-            :auto-brightness="autoBrightness" :sensor-options="sensorOptions" @close="closeModal"
-            @update:stop="handleStopModalUpdate" @update:autoBrightness="handleAutoBrightnessUpdate" />
-
-        <BottomSheet :open="activeModal === 'devices'" title="Выбор устройств" @close="closeModal">
-            <DeviceSelectorSheet :sections="deviceSheetSections" :selected-ids="selectedDevicesIds"
-                :selected-groups="selectedGroupIds" @toggle-group="handleGroupToggle"
-                @toggle-device="handleDeviceToggle" />
-        </BottomSheet>
-
-        <BottomSheet :open="activeModal === 'schedule'" title="Запускать" @close="closeModal">
-            <div class="weekday-picker">
-                <p>Дни запуска</p>
-                <div class="weekday-grid">
-                    <button v-for="day in weekdayOptions" :key="day.value" type="button" class="weekday-btn"
-                        :class="{ active: selectedDays.includes(day.value) }" @click="toggleDay(day.value)">
-                        {{ day.label }}
+                <div class="status-text" :style="{ color: scenarioStatusColor }">
+                    <span>{{ isCreateMode ? 'Новый сценарий (не сохранен)' : scenarioStatusText }}</span>
+                </div>
+                <div class="status-actions">
+                    <button v-if="canControlRuntime && (runtimePaused || scenarioRuntimeStatus?.kind === 'running')"
+                        type="button" class="status-icon-btn" :title="runtimePaused ? 'Возобновить' : 'Пауза'"
+                        @click="toggleRuntimePause" :disabled="scenarioDisplayStatus === 'off' || pausing">
+                        <span v-if="runtimePaused">▶</span>
+                        <span v-else>⏸</span>
+                    </button>
+                    <button type="button" class="status-icon-btn power" :disabled="powerToggling"
+                        :title="scenarioDisplayStatus === 'off' ? 'Включить' : 'Выключить'" @click="toggleScenarioPower">
+                        <span>{{ scenarioDisplayStatus === 'off' ? '⏻' : '⏼' }}</span>
                     </button>
                 </div>
             </div>
-            <div class="presence-inline-controls">
-                <div class="presence-inline-header">
-                    <span>Когда запускать</span>
-                </div>
-                <SegmentedControl aria-label="Режим присутствия" dense :model-value="presenceMode"
-                    :options="presenceOptions.map((option) => ({ value: option.id, label: option.label, disabled: option.disabled, warning: option.warning, tooltip: option.tooltip }))"
-                    @update:model-value="presenceMode = $event" />
-            </div>
-        </BottomSheet>
 
-        <div v-if="saveToastMessage" :key="saveToastId" class="save-toast" role="status" aria-live="polite">
-            {{ saveToastMessage }}
-        </div>
+            <div class="dial-layout">
+                <div class="dial-column">
+                    <div class="dial-card">
+                        <ScenarioDialCircle :start-stop="startStop" :end-stop="endStop"
+                            :auto-brightness="autoBrightnessActive" :current-status-label="scenarioStatusLabel"
+                            :scenario-status="scenarioDialStatus" :sunrise-minute="sunriseTime" :sunset-minute="sunsetTime"
+                            :dial-face-ratio="dialFaceRatio" :current-minute="currentWorldMinute"
+                            :scenario-segment-radius="130" :current-state="dialCurrentState"
+                            @update:start-stop="handleStartStopUpdate"
+                            @update:end-stop="handleEndStopUpdate" @change="handleDialChange"
+                            @open-start-editor="openModal('state', 'start')" @open-end-editor="openModal('state', 'end')"
+                            @resume="handleResumeFromDial" />
+                    </div>
+                </div>
+                <div class="settings-column">
+                    <section class="compact-section">
+                        <StopPreviewList :start-summary="startStateSummary" :end-summary="endStateSummary"
+                            :auto-brightness-active="autoBrightnessActive" @open-start="openModal('state', 'start')"
+                            @open-end="openModal('state', 'end')" />
+
+                        <TargetDevicesCard :loading="catalogLoading" :error="catalogError" :summary="selectedTargetsLabel"
+                            @open="openModal('devices')" />
+
+                        <RunScheduleCard :summary="scheduleSummary" @open="openModal('schedule')" />
+                    </section>
+
+                    <div class="scenario-feedback">
+                        <p v-if="scenarioError" class="status-info error">{{ scenarioError }}</p>
+                        <button v-if="scenario.id" type="button" class="scenario-delete-text" @click="handleDelete">
+                            Удалить сценарий
+                        </button>
+                    </div>
+
+                    <ScenarioActionsFooter v-if="hasUnsavedChanges || scenarioSaving" class="scenario-actions-footer"
+                        :create-mode="isCreateMode" :saving="scenarioSaving" :dirty="hasUnsavedChanges" @save="handleSave"
+                        @cancel="handleCancel" />
+                </div>
+            </div>
+
+            <StopStateSheet :open="activeModal === 'state'" v-if="currentStopForModal" :stop="currentStopForModal"
+                :palette="colorPalette" :time="scenario.time" :context="modalPayload === 'start' ? 'start' : 'end'"
+                :auto-brightness="autoBrightness" :sensor-options="sensorOptions" @close="closeModal"
+                @update:stop="handleStopModalUpdate" @update:autoBrightness="handleAutoBrightnessUpdate" />
+
+            <BottomSheet :open="activeModal === 'devices'" title="Выбор устройств" @close="closeModal">
+                <DeviceSelectorSheet :sections="deviceSheetSections" :selected-ids="selectedDevicesIds"
+                    :selected-groups="selectedGroupIds" @toggle-group="handleGroupToggle"
+                    @toggle-device="handleDeviceToggle" />
+            </BottomSheet>
+
+            <BottomSheet :open="activeModal === 'schedule'" title="Запускать" @close="closeModal">
+                <div class="weekday-picker">
+                    <p>Дни запуска</p>
+                    <div class="weekday-grid">
+                        <button v-for="day in weekdayOptions" :key="day.value" type="button" class="weekday-btn"
+                            :class="{ active: selectedDays.includes(day.value) }" @click="toggleDay(day.value)">
+                            {{ day.label }}
+                        </button>
+                    </div>
+                </div>
+                <div class="presence-inline-controls">
+                    <div class="presence-inline-header">
+                        <span>Когда запускать</span>
+                    </div>
+                    <SegmentedControl aria-label="Режим присутствия" dense :model-value="presenceMode"
+                        :options="presenceOptions.map((option) => ({ value: option.id, label: option.label, disabled: option.disabled, warning: option.warning, tooltip: option.tooltip }))"
+                        @update:model-value="presenceMode = $event" />
+                </div>
+            </BottomSheet>
+
+            <div v-if="saveToastMessage" :key="saveToastId" class="save-toast" role="status" aria-live="polite">
+                {{ saveToastMessage }}
+            </div>
+        </template>
     </main>
 </template>
 
@@ -1287,6 +1384,41 @@ function handleResumeFromDial() {
     width: 100%;
     max-width: 1000px;
     margin: 0 auto;
+}
+
+.scenario-loading {
+    min-height: 60vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.scenario-loading-card {
+    background: var(--surface-card);
+    border: 1px solid var(--surface-border);
+    border-radius: 18px;
+    padding: 18px 24px;
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--text-primary);
+    font-weight: 600;
+    box-shadow: 0 16px 30px rgba(2, 9, 25, 0.3);
+}
+
+.scenario-loading-spinner {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 2px solid rgba(148, 163, 184, 0.4);
+    border-top-color: rgba(248, 250, 252, 0.9);
+    animation: scenario-spin 0.8s linear infinite;
+}
+
+@keyframes scenario-spin {
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 
@@ -1552,7 +1684,7 @@ function handleResumeFromDial() {
 
 .scenario-delete-text {
     margin: 6px 0 0;
-    font-size: 11px;
+    font-size: 14px;
     color: rgba(248, 113, 113, 0.9);
     cursor: pointer;
     letter-spacing: normal;
@@ -1560,7 +1692,6 @@ function handleResumeFromDial() {
     background: transparent;
     border: none;
     padding: 0;
-    font: inherit;
     display: block;
     width: 100%;
     text-align: center;
@@ -1592,6 +1723,7 @@ function handleResumeFromDial() {
         opacity: 0;
         transform: translate(-50%, -50%) scale(0.98);
     }
+
     to {
         opacity: 1;
         transform: translate(-50%, -50%) scale(1);

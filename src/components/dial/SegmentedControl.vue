@@ -230,7 +230,7 @@ watch(
     flex: 1;
     border: none;
     background: transparent;
-    color: #94a3b8;
+    color: var(--text-muted);
     border-radius: 10px;
     padding: 8px;
     font-size: 14px;

@@ -6,7 +6,6 @@ const props = defineProps({
         default: () => ([
             { value: 'always', label: 'Всегда' },
             { value: 'onlyWhenHome', label: 'Когда кто-то дома' },
-            { value: 'onlyWhenAway', label: 'Когда никого нет дома' }
         ])
     },
     name: { type: String, default: 'presence-mode' },

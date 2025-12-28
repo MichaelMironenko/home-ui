@@ -42,6 +42,10 @@ const props = defineProps({
     currentMinute: {
         type: Number,
         default: null
+    },
+    currentState: {
+        type: Object,
+        default: null
     }
 })
 
@@ -78,11 +82,6 @@ const HALF_DAY_MINUTES = MINUTES_PER_DAY / 2
 const FULL_CIRCLE_DEG = 360
 const HANDLE_EMIT_THROTTLE_MS = 80
 const AUTO_BRIGHTNESS_WARM_HEX = '#fff4dd'
-const CHEVRON_STEP_MINUTES = 1
-const CHEVRON_TAIL_MINUTES = 15
-const CHEVRON_CYCLE_MS = 1800
-const CHEVRON_MIN_STEP_MS = 10
-const CHEVRON_MAX_STEP_MS = 100
 
 const dialElement = ref(null)
 const dialMetrics = reactive({
@@ -127,7 +126,6 @@ const stopEmitState = {
 }
 
 const gradientId = `scenario-arc-gradient-${Math.random().toString(36).slice(2, 9)}`
-const chevronShadowId = `scenario-chevron-shadow-${Math.random().toString(36).slice(2, 9)}`
 
 const dialScale = computed(() => {
     const size = dialMetrics.size || BASE_DIAL_SIZE
@@ -188,6 +186,20 @@ const gradientEndColor = computed(() => stopColorHex(localEndStop))
 const dialInactive = computed(() => ['off', 'paused'].includes(props.scenarioStatus))
 const isPaused = computed(() => props.scenarioStatus === 'paused')
 const isRunning = computed(() => props.scenarioStatus === 'running')
+const dialCenterState = computed(() => props.currentState || null)
+const showDialCenter = computed(() => {
+    if (!isRunning.value) return false
+    const state = dialCenterState.value
+    return Boolean(state && (state.brightness || state.colorHex))
+})
+const showDialCenterColor = computed(() => Boolean(showDialCenter.value && dialCenterState.value?.colorHex))
+const showDialCenterTemp = computed(
+    () => showDialCenterColor.value && Number.isFinite(dialCenterState.value?.temperature)
+)
+const dialCenterSwatchStyle = computed(() => {
+    const colorHex = dialCenterState.value?.colorHex
+    return colorHex ? { backgroundColor: colorHex } : {}
+})
 
 function readDialMetrics() {
     const el = dialElement.value
@@ -291,77 +303,6 @@ const scenarioArc = computed(() => {
     }
 })
 
-const scenarioChevrons = computed(() => {
-    if (!isRunning.value) return []
-    const radius = geom.value.scheduleRadius
-    const width = geom.value.scheduleStrokeWidth
-    const spanMinutes = scenarioSpanMinutes.value
-    if (!Number.isFinite(radius) || !Number.isFinite(width) || radius <= 0 || width <= 0) return []
-    if (!Number.isFinite(spanMinutes) || spanMinutes < CHEVRON_STEP_MINUTES * 3) return []
-    const size = Math.max(3.2, Math.min(9, width * 0.38))
-    const chevronHalf = Math.max(2.2, size * 0.65)
-    const chevronDepth = Math.max(2, size * 0.6)
-    const marks = []
-    const edgeInset = CHEVRON_STEP_MINUTES * 1
-    for (let offset = edgeInset + 20; offset < spanMinutes - edgeInset; offset += CHEVRON_STEP_MINUTES) {
-        const minute = normalizeMinutes(startMinutes.value + offset)
-        const angle = minuteToAngle(minute)
-        const point = angleToPoint(angle, radius)
-        marks.push({
-            x: point.x,
-            y: point.y,
-            rotate: angle + 90,
-            path: `M ${-chevronDepth} ${-chevronHalf} L 0 0 L ${-chevronDepth} ${chevronHalf}`
-        })
-    }
-    return marks
-})
-
-const activeChevronIndex = ref(0)
-let chevronTimerId = 0
-
-const chevronStepInterval = computed(() => {
-    const spanMinutes = scenarioSpanMinutes.value
-    if (!Number.isFinite(spanMinutes) || spanMinutes <= 0) return CHEVRON_MAX_STEP_MS
-    const stepCount = Math.max(1, Math.round(spanMinutes / CHEVRON_STEP_MINUTES))
-    const scaled = CHEVRON_CYCLE_MS / stepCount
-    return Math.min(CHEVRON_MAX_STEP_MS, Math.max(CHEVRON_MIN_STEP_MS, scaled))
-})
-
-const stopChevronTimer = () => {
-    if (chevronTimerId) {
-        clearInterval(chevronTimerId)
-        chevronTimerId = 0
-    }
-}
-
-const startChevronTimer = () => {
-    stopChevronTimer()
-    const count = scenarioChevrons.value.length
-    if (!count || dialInactive.value || !isRunning.value) return
-    if (activeChevronIndex.value >= count) activeChevronIndex.value = 0
-    chevronTimerId = setInterval(() => {
-        activeChevronIndex.value = (activeChevronIndex.value + 1) % count
-    }, chevronStepInterval.value)
-}
-
-watch([() => scenarioChevrons.value.length, dialInactive, chevronStepInterval], startChevronTimer, { immediate: true })
-
-onUnmounted(() => stopChevronTimer())
-
-const chevronClass = (index) => {
-    const count = scenarioChevrons.value.length
-    if (!count) return {}
-    const activeIndex = activeChevronIndex.value % count
-    const tailOffset = Math.max(1, Math.round(CHEVRON_TAIL_MINUTES / CHEVRON_STEP_MINUTES))
-    const tail1Index = count > tailOffset ? (activeIndex - tailOffset + count) % count : -1
-    const tail2Index = count > tailOffset * 2 ? (activeIndex - tailOffset * 2 + count) % count : -1
-    return {
-        'is-active': index === activeIndex,
-        'is-tail-1': index === tail1Index,
-        'is-tail-2': index === tail2Index
-    }
-}
 
 const scenarioArcGradientVector = computed(() => {
     if (autoOnlyBrightnessArc.value) return null
@@ -996,7 +937,8 @@ function minutesToTimeString(minute) {
                 <span class="time-chip-label">Старт</span>
                 <div class="time-chip-value">
                     <div class="time-chip-main" :class="{ offset: startLabel.isSun }">
-                        <strong class="time-chip-time">{{ startLabel.time }}</strong>
+                        <strong class="time-chip-time" :class="{ sun: startLabel.isSun }">{{ startLabel.time }}</strong>
+                        <!--
                         <span v-if="startLabel.isSun" class="time-chip-sun" aria-hidden="true">
                             <svg v-if="startLabel.anchor === 'sunrise'" viewBox="0 0 32 32" class="sun-icon"
                                 aria-hidden="true">
@@ -1026,15 +968,17 @@ function minutesToTimeString(minute) {
                                 </g>
                             </svg>
                         </span>
+                        -->
                     </div>
-                    <span v-if="startLabel.meta" class="time-chip-meta">{{ startLabel.meta }}</span>
+                    <span v-if="startLabel.meta" class="time-chip-meta" :class="{ sun: startLabel.isSun }">{{ startLabel.meta }}</span>
                 </div>
             </button>
             <button type="button" class="time-chip end" @click="emit('open-end-editor')">
                 <span class="time-chip-label">Финиш</span>
                 <div class="time-chip-value">
                     <div class="time-chip-main" :class="{ offset: endLabel.isSun }">
-                        <strong class="time-chip-time">{{ endLabel.time }}</strong>
+                        <strong class="time-chip-time" :class="{ sun: endLabel.isSun }">{{ endLabel.time }}</strong>
+                        <!--
                         <span v-if="endLabel.isSun" class="time-chip-sun" aria-hidden="true">
                             <svg v-if="endLabel.anchor === 'sunrise'" viewBox="0 0 32 32" class="sun-icon"
                                 aria-hidden="true">
@@ -1064,8 +1008,9 @@ function minutesToTimeString(minute) {
                                 </g>
                             </svg>
                         </span>
+                        -->
                     </div>
-                    <span v-if="endLabel.meta" class="time-chip-meta">{{ endLabel.meta }}</span>
+                    <span v-if="endLabel.meta" class="time-chip-meta" :class="{ sun: endLabel.isSun }">{{ endLabel.meta }}</span>
                 </div>
             </button>
         </div>
@@ -1088,9 +1033,6 @@ function minutesToTimeString(minute) {
                         <stop offset="0%" :stop-color="gradientStartColor" />
                         <stop offset="100%" :stop-color="gradientEndColor" />
                     </linearGradient>
-                    <filter :id="chevronShadowId" x="-30%" y="-30%" width="160%" height="160%">
-                        <feDropShadow dx="0" dy="0.6" stdDeviation="0.4" flood-color="rgba(0, 0, 0, 0.5)" />
-                    </filter>
                 </defs>
                 <g v-if="scenarioArc" class="scenario-ring-group">
                     <path v-if="scenarioArc.kind === 'path'" :d="scenarioArc.path" :stroke="scenarioArc.stroke"
@@ -1098,13 +1040,6 @@ function minutesToTimeString(minute) {
                     <circle v-else-if="scenarioArc.kind === 'circle'" cx="100" cy="100" :r="scenarioArc.radius"
                         fill="none" :stroke="scenarioArc.stroke" :stroke-width="scenarioArc.width"
                         :class="{ pulse: scenarioArc.pulse }" />
-                </g>
-                <g v-if="scenarioChevrons.length" class="scenario-chevrons">
-                    <g v-for="(item, index) in scenarioChevrons" :key="`chevron-${index}`"
-                        :transform="`translate(${item.x} ${item.y}) rotate(${item.rotate})`">
-                        <path class="scenario-chevron" :class="chevronClass(index)" :d="item.path"
-                            :filter="`url(#${chevronShadowId})`" />
-                    </g>
                 </g>
                 <g v-if="scenarioBoundaryMarks" class="scenario-boundaries">
                     <line class="scenario-boundary" :x1="scenarioBoundaryMarks.start.inner.x"
@@ -1138,6 +1073,20 @@ function minutesToTimeString(minute) {
                 </svg>
             </div>
 
+            <div v-if="showDialCenter" class="dial-center-info">
+                <div class="dial-center-title">Сейчас</div>
+                <div v-if="showDialCenterColor" class="dial-center-color">
+                    <span class="dial-center-label">Цвет:</span>
+                    <span class="dial-center-swatch" :style="dialCenterSwatchStyle"></span>
+                    <span v-if="showDialCenterTemp" class="dial-center-temp">
+                        {{ dialCenterState.temperature }}K
+                    </span>
+                </div>
+                <div v-if="dialCenterState?.brightness" class="dial-center-brightness">
+                    {{ dialCenterState.brightness }}
+                </div>
+            </div>
+
             <button class="dial-handle start" :style="startHandleStyle"
                 @pointerdown="(event) => handleDialPointerDown('start', event)" aria-label="Старт"></button>
             <button class="dial-handle end" :style="endHandleStyle"
@@ -1158,7 +1107,7 @@ function minutesToTimeString(minute) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
     align-items: flex-start;
-    margin-bottom: 8px;
+    margin-bottom: 16px;
 }
 
 .time-chip {
@@ -1189,6 +1138,8 @@ function minutesToTimeString(minute) {
     flex-direction: column;
     align-items: center;
     gap: 4px;
+    margin-top: 4px;
+    height: 44px;
 }
 
 .time-chip-main {
@@ -1199,7 +1150,7 @@ function minutesToTimeString(minute) {
 }
 
 .time-chip-main.offset {
-    padding-left: 6px;
+    padding-left: 0;
 }
 
 .time-chip-time {
@@ -1208,6 +1159,10 @@ function minutesToTimeString(minute) {
     font-size: 20px;
     font-weight: 600;
     line-height: 1;
+}
+
+.time-chip-time.sun {
+    color: #f9c316;
 }
 
 .time-chip-sun {
@@ -1240,6 +1195,10 @@ function minutesToTimeString(minute) {
     font-size: 12px;
     color: var(--text-muted);
     font-weight: 500;
+}
+
+.time-chip-meta.sun {
+    color: #f9c316;
 }
 
 .dial {
@@ -1331,6 +1290,63 @@ function minutesToTimeString(minute) {
     fill: transparent;
 }
 
+.dial-center-info {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    text-align: center;
+    z-index: 6;
+    pointer-events: none;
+    color: var(--text-primary);
+}
+
+.dial-center-title {
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.dial-center-color {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.dial-center-label {
+    color: var(--text-muted);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.dial-center-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1px solid rgba(15, 23, 42, 0.65);
+    box-shadow: 0 0 0 2px rgba(248, 250, 252, 0.12);
+}
+
+.dial-center-temp {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.dial-center-brightness {
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1;
+}
+
 .face-ticks line {
     stroke-linecap: round;
     stroke-width: 1px;
@@ -1394,27 +1410,6 @@ function minutesToTimeString(minute) {
     shape-rendering: geometricPrecision;
 }
 
-.scenario-chevron {
-    fill: none;
-    stroke: rgba(255, 255, 255, 0.5);
-    stroke-width: 1.6px;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    opacity: 0;
-}
-
-.scenario-chevron.is-active {
-    opacity: 0.85;
-}
-
-.scenario-chevron.is-tail-1 {
-    opacity: 0.5;
-}
-
-.scenario-chevron.is-tail-2 {
-    opacity: 0.25;
-}
-
 .scenario-cap {
     opacity: 0.98;
 }
@@ -1457,19 +1452,4 @@ function minutesToTimeString(minute) {
     opacity: 0.65;
 }
 
-.dial.inactive .scenario-chevron {
-    opacity: 0;
-}
-
-.dial.inactive .scenario-chevron.is-active {
-    opacity: 0.45;
-}
-
-.dial.inactive .scenario-chevron.is-tail-1 {
-    opacity: 0.28;
-}
-
-.dial.inactive .scenario-chevron.is-tail-2 {
-    opacity: 0.14;
-}
 </style>

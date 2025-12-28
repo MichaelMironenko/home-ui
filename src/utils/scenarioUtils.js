@@ -135,7 +135,7 @@ export function normalizeScenarioStruct(scenario) {
         end: normalizeBoundary(rawTime.end, { type: 'clock', time: '23:00' })
     }
     scenario.runtime = scenario.runtime && typeof scenario.runtime === 'object' ? { ...scenario.runtime } : {}
-    if (!['always', 'onlyWhenHome', 'onlyWhenAway'].includes(scenario.runtime.presence)) {
+    if (!['always', 'onlyWhenHome'].includes(scenario.runtime.presence)) {
         scenario.runtime.presence = 'always'
     }
     scenario.actions = Array.isArray(scenario.actions) ? [...scenario.actions] : []

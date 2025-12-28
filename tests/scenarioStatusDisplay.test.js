@@ -32,6 +32,15 @@ describe('deriveScenarioListStatus', () => {
         expect(result.label).toBe('Пауза · Ручная коррекция')
     })
 
+    it('returns paused with manual reason when status reason is app_button_pause', () => {
+        const item = baseItem({
+            status: summarizeStatusRecord({ result: { active: false, reason: 'app_button_pause' } })
+        })
+        const result = deriveScenarioListStatus(item, Date.now())
+        expect(result.kind).toBe('paused')
+        expect(result.label).toBe('Пауза · Ручная коррекция')
+    })
+
     it('returns paused with presence reason when guard triggers', () => {
         const item = baseItem({
             pause: { reason: { source: 'presence_guard' } }

@@ -182,7 +182,8 @@ function handleSensorChange(event) {
                             <select :value="autoBrightness.sensorId" @change="handleSensorChange">
                                 <option v-if="!sensorOptions.length" disabled value="">Нет датчиков</option>
                                 <option v-for="sensor in sensorOptions" :key="sensor.id" :value="sensor.id">
-                                    {{ sensor.name }}{{ sensor.currentLux != null ? ` (Сейчас: ${sensor.currentLux} лк)` : '' }}
+                                    {{ sensor.name }}{{ sensor.currentLux != null ? ` (Сейчас: ${sensor.currentLux} лк)`
+                                        : '' }}
                                 </option>
                             </select>
                         </label>
@@ -502,8 +503,7 @@ function handleSensorChange(event) {
 }
 
 .auto-scale--brightness .auto-scale-track {
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 1) 100%);
-    box-shadow: inset 0 0 16px rgba(2, 7, 20, 0.45), 0 0 18px rgba(255, 255, 255, 0.25);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 1) 100%);
 }
 
 .auto-scale-range {

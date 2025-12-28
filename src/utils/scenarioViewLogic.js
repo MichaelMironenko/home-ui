@@ -133,7 +133,6 @@ export function buildColorAction({ startStop, endStop }) {
     if (startStop.colorMode === 'temperature' && endStop.colorMode === 'temperature') {
         return {
             type: 'light.color.cct',
-            applyOnlyIfOn: true,
             source: {
                 type: 'manualRamp',
                 fromK: clampNumberLocal(startStop.temperature, 1700, 6500),
@@ -143,7 +142,6 @@ export function buildColorAction({ startStop, endStop }) {
     }
     return {
         type: 'light.color.hsv',
-        applyOnlyIfOn: true,
         source: {
             type: 'manualRamp',
             from: hexToHsv(startStop.colorHex),

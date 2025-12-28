@@ -139,7 +139,6 @@ const scenarioTz = computed(() => scenario.time?.tz || scenario.autoLight?.locat
 const presenceChoices = Object.freeze([
     { value: 'always', label: 'Всегда' },
     { value: 'onlyWhenHome', label: 'Когда кто-то дома' },
-    { value: 'onlyWhenAway', label: 'Когда никого нет дома' }
 ])
 
 const paramsRef = computed(() => scenario.autoLight?.params || DEFAULT_PARAMS)
@@ -561,7 +560,7 @@ const statusResult = computed(() => statusInfo.value?.result || null)
 const isPaused = computed(() => {
     if (pauseInfo.value?.until && Date.now() < pauseInfo.value.until) return true
     if (derived.value?.status === 'PAUSE') return true
-    if (statusResult.value?.reason === 'manual_pause' || statusResult.value?.reason === 'autopause') return true
+    if (statusResult.value?.reason === 'app_button_pause' || statusResult.value?.reason === 'autopause') return true
     return false
 })
 
@@ -576,7 +575,7 @@ const statusView = computed(() => {
     if (result.reason === 'presence_guard') {
         return { text: 'Заблокирован по присутствию' }
     }
-    if (result.reason === 'manual_pause' || result.reason === 'autopause') {
+    if (result.reason === 'app_button_pause' || result.reason === 'autopause') {
         return { text: 'На паузе' }
     }
     if (result.reason === 'disabled') {
@@ -601,7 +600,7 @@ const statusNotes = computed(() => {
         if (Number.isFinite(result.actionsSent)) {
             notes.push(`Команды: ${result.actionsSent}`)
         }
-        if (result.reason && !['manual_pause', 'autopause', 'presence_guard', 'disabled'].includes(result.reason)) {
+        if (result.reason && !['app_button_pause', 'autopause', 'presence_guard', 'disabled'].includes(result.reason)) {
             notes.push(result.reason)
         }
     }
@@ -816,7 +815,7 @@ async function handleRunPause() {
             message.value = 'Сценарий поставлен на паузу'
         } else {
             const result = response?.result || null
-            const stillPaused = !!(response?.pause || result?.reason === 'manual_pause' || result?.reason === 'autopause')
+            const stillPaused = !!(response?.pause || result?.reason === 'app_button_pause' || result?.reason === 'autopause')
             if (stillPaused) {
                 message.value = result?.reason === 'presence_guard'
                     ? 'Команда отклонена: никого нет дома'

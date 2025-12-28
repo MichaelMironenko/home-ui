@@ -101,7 +101,7 @@ export function normalizeAutoLightScenarioStruct(scenario) {
     cfg.history = Array.isArray(cfg.history) ? cfg.history : []
 
     scenario.runtime = scenario.runtime && typeof scenario.runtime === 'object' ? scenario.runtime : {}
-    if (!['always', 'onlyWhenHome', 'onlyWhenAway'].includes(scenario.runtime.presence)) {
+    if (!['always', 'onlyWhenHome'].includes(scenario.runtime.presence)) {
         scenario.runtime.presence = 'always'
     }
     const fallbackTime = {
