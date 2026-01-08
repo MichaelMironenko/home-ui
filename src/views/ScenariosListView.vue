@@ -1401,14 +1401,13 @@ function togglePinnedScenario(key) {
     }
 
     .scenario-orbit {
-        flex: 0 1 450px;
-        min-width: 250px;
+        flex: 1 1 0;
+        min-width: 330px;
         max-width: 450px;
     }
 
     .scenario-list {
-        flex: 1 1 auto;
-        min-width: 250px;
+        flex: 1 1 0;
     }
 }
 </style>
