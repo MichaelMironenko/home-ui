@@ -262,8 +262,13 @@ nav {
     box-shadow: 0 10px 30px rgba(168, 85, 247, 0.25);
 }
 
+.tab-link:hover {
+    color: var(--text-primary);
+    background: rgba(148, 163, 184, 0.12);
+}
+
 .tab-link:active {
-    transform: translateY(1px);
+    transform: scale(0.95);
 }
 
 @media (max-width: 900px) {

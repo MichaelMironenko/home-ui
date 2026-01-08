@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getConfig } from '../lib/api'
+import { cacheScenarioUpdate, getCachedScenarioById } from '../lib/scenarioCache'
 import { computeEnvironment, createDefaultScenario, normalizeScenarioStruct } from '../utils/scenarioUtils'
 import { temperatureToHex } from '../utils/colorUtils'
 import { normalizeEvents, normalizeScenarioName as normalizeEventScenarioName } from '../utils/events'
@@ -42,6 +43,7 @@ const scenarioDisplayStatus = computed(() => {
 })
 const scenarioStatusSummary = ref(null)
 const scenarioPauseInfo = ref(null)
+const scenarioOverlaps = ref([])
 const route = useRoute()
 const router = useRouter()
 const profileStore = useProfile()
@@ -703,33 +705,19 @@ function resetScenarioState() {
     scenarioStatusSummary.value = null
     scenarioPauseInfo.value = null
     editingName.value = false
+    scenarioOverlaps.value = []
     applyStopsFromScenario()
     syncSelectedDevicesFromSources(true)
     markBaseline()
 }
 
-async function loadScenarioById(id) {
-    if (!scenarioApiReady.value) return
-    if (!id) {
-        scenarioLoading.value = false
-        resetScenarioState()
-        return
-    }
-    scenarioError.value = ''
-    scenarioLoading.value = true
-    try {
-        const response = await scenarioRequest(`/scenario?id=${encodeURIComponent(id)}`)
-        const data = response?.scenario
-        if (!data) {
-            resetScenarioState()
-            return
-        }
+function applyScenarioResponse(payload, { skipScenario = false, skipCache = false } = {}) {
+    const data = payload?.scenario
+    if (!skipScenario && data) {
         Object.assign(scenario, createDefaultScenario(), data)
         normalizeScenarioStruct(scenario)
         scenario.id = data.id || ''
         scenario.name = data.name || ''
-        scenarioPauseInfo.value = response?.pause || null
-        scenarioStatusSummary.value = summarizeStatusRecord(response?.statusSummary || response?.status || null)
         presenceMode.value = scenario.runtime?.presence === 'onlyWhenHome' ? 'home' : 'any'
         scenarioStatus.value = scenario.disabled ? 'off' : 'running'
         captureSelectionSourcesFromScenario()
@@ -738,6 +726,63 @@ async function loadScenarioById(id) {
         syncSelectedDevicesFromSources(true)
         editingName.value = false
         markBaseline()
+    }
+    scenarioPauseInfo.value = payload?.pause || null
+    scenarioStatusSummary.value = summarizeStatusRecord(payload?.statusSummary || payload?.status || null)
+    scenarioOverlaps.value = Array.isArray(payload?.overlaps) ? payload.overlaps : []
+    if (!skipScenario && !skipCache && data) {
+        const meta = payload?.meta || null
+        const mergedMeta = payload?.etag
+            ? { ...(meta || {}), etag: payload.etag }
+            : meta
+        cacheScenarioUpdate(data, mergedMeta)
+    }
+}
+
+const overlapNameMap = computed(() => {
+    const map = {}
+    const overlaps = scenarioOverlaps.value || []
+    overlaps.forEach((entry) => {
+        const id = entry?.scenarioId
+        if (!id) return
+        const cached = getCachedScenarioById(String(id))
+        map[id] = cached?.scenario?.name || String(id)
+    })
+    return map
+})
+
+async function loadScenarioById(id) {
+    if (!scenarioApiReady.value) return
+    if (!id) {
+        scenarioLoading.value = false
+        resetScenarioState()
+        return
+    }
+    const cached = getCachedScenarioById(id)
+    if (cached?.scenario) {
+        applyScenarioResponse({ scenario: cached.scenario }, { skipScenario: false, skipCache: true })
+        scenarioLoading.value = false
+    }
+    scenarioError.value = ''
+    if (!cached?.scenario) scenarioLoading.value = true
+    try {
+        const query = new URLSearchParams({ id })
+        const headers = {}
+        if (cached?.meta?.etag) {
+            headers['If-None-Match'] = cached.meta.etag
+        }
+        const response = await scenarioRequest(`/scenario?${query.toString()}`, { headers })
+        if (response?.notModified && cached?.scenario) {
+            if (response?.etag && cached?.meta) {
+                cacheScenarioUpdate(cached.scenario, { ...cached.meta, etag: response.etag })
+            }
+            return
+        }
+        if (!response?.scenario) {
+            resetScenarioState()
+            return
+        }
+        applyScenarioResponse(response, { skipScenario: false })
     } catch (err) {
         console.error('Failed to load scenario', err)
         scenarioError.value = err?.message || 'Не удалось загрузить сценарий'
@@ -761,6 +806,7 @@ async function saveScenario() {
             scenario.name = response.scenario.name || scenario.name
             captureSelectionSourcesFromScenario()
             selectionDirty.value = false
+            cacheScenarioUpdate(response.scenario, response?.meta || null)
         }
         scenarioStatus.value = scenario.disabled ? 'off' : 'running'
         applyStopsFromScenario()
@@ -1303,6 +1349,8 @@ function handleResumeFromDial() {
                             :scenario-status="scenarioDialStatus" :sunrise-minute="sunriseTime" :sunset-minute="sunsetTime"
                             :dial-face-ratio="dialFaceRatio" :current-minute="currentWorldMinute"
                             :scenario-segment-radius="130" :current-state="dialCurrentState"
+                            :overlaps="scenarioOverlaps" :overlap-names="overlapNameMap"
+                            :time-zone="scenario.time?.tz"
                             @update:start-stop="handleStartStopUpdate"
                             @update:end-stop="handleEndStopUpdate" @change="handleDialChange"
                             @open-start-editor="openModal('state', 'start')" @open-end-editor="openModal('state', 'end')"

@@ -47,7 +47,7 @@ const emit = defineEmits(['click'])
 }
 
 .dial-card-button:not(:disabled):active {
-    transform: translateY(1px);
+    transform: scale(0.95);
 }
 
 .dial-card-left {

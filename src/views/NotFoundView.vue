@@ -42,7 +42,7 @@ setDocumentDescription('Страница не найдена — верните�
   text-decoration: none;
   background: rgba(59, 130, 246, 0.18);
   color: #e0f2fe;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, transform var(--transition-base);
 }
 
 .btn.secondary {
@@ -52,5 +52,9 @@ setDocumentDescription('Страница не найдена — верните�
 
 .btn:hover {
   background: rgba(59, 130, 246, 0.3);
+}
+
+.btn:active {
+  transform: scale(0.95);
 }
 </style>

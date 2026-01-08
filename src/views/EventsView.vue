@@ -445,12 +445,17 @@ function scenarioLinkLocation(group) {
 
 .event-card--clickable {
     cursor: pointer;
-    transition: border-color 0.2s ease, background 0.2s ease;
+    transition: border-color 0.2s ease, background 0.2s ease, transform var(--transition-base);
 }
 
 .event-card--clickable:hover {
     border-color: var(--surface-border-strong);
     background: var(--surface-hover);
+}
+
+.event-card--clickable:active,
+.event-card--clickable:has(.event-card-link:active) {
+    transform: scale(0.95);
 }
 
 .event-card--clickable:focus-visible {

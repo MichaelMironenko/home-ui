@@ -123,7 +123,7 @@ function setSunOffsetValue(value) {
 </script>
 
 <template>
-    <BottomSheet :open="open" :title="sheetTitle" @close="emit('close')">
+    <BottomSheet :open="open" :title="sheetTitle" max-height="90vh" @close="emit('close')">
         <div class="stop-editor">
             <section class="control-block time-section">
 
@@ -176,7 +176,7 @@ function setSunOffsetValue(value) {
 .stop-editor {
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 16px;
 }
 
 :deep(.control-block) {
@@ -292,5 +292,4 @@ function setSunOffsetValue(value) {
 .slider-block input[type='range'] {
     width: 100%;
 }
-
 </style>

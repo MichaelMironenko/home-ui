@@ -5,7 +5,7 @@
   --surface-muted: #111827;
   --surface-border: rgba(148, 163, 184, 0.2);
   --surface-border-strong: rgba(148, 163, 184, 0.4);
-  --surface-hover: rgba(148, 163, 184, 0.1);
+  --surface-hover: #0f1830;
   --text-primary: #e2e8f0;
   --text-muted: #7d8ca1;
   --text-subtle: #cbd5f5;
@@ -46,6 +46,21 @@ a {
 
 button {
   font-family: inherit;
+  transition: transform var(--transition-base), filter var(--transition-base);
+}
+
+[role="button"] {
+  transition: transform var(--transition-base), filter var(--transition-base);
+}
+
+button:not(:disabled):hover,
+[role="button"]:not([aria-disabled='true']):hover {
+  filter: brightness(1.05);
+}
+
+button:not(:disabled):active,
+[role="button"]:not([aria-disabled='true']):active {
+  transform: scale(0.95);
 }
 
 #app {

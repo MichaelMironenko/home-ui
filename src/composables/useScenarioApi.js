@@ -39,6 +39,9 @@ export function useScenarioApi() {
             credentials: options.credentials ?? 'include',
             body: options.body !== undefined ? JSON.stringify(options.body) : undefined
         });
+        if (response.status === 304) {
+            return { notModified: true, etag: response.headers.get('etag') || '' };
+        }
         const text = await response.text();
         let json;
         try {

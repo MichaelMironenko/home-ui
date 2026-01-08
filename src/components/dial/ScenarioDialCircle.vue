@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, reactive, ref, toRaw, watch } from 'vue'
 import { stopColorHex } from '../../utils/colorUtils'
+import DialFace from './DialFace.vue'
 
 const props = defineProps({
     startStop: {
@@ -46,6 +47,18 @@ const props = defineProps({
     currentState: {
         type: Object,
         default: null
+    },
+    overlaps: {
+        type: Array,
+        default: () => []
+    },
+    overlapNames: {
+        type: Object,
+        default: () => ({})
+    },
+    timeZone: {
+        type: String,
+        default: ''
     }
 })
 
@@ -66,14 +79,10 @@ const FACE_RADIUS = DEFAULT_SEGMENT_OUTER_RADIUS
 const DIAL_FACE_MIN_GAP_PX = 48
 const DIAL_FACE_GAP_FRACTION = 0.25
 const ARC_PADDING_PX = 5
-const TICK_EDGE_RATIO = 20
 const SUN_TIME_EDGE_RATIO = 20
-const NUMBER_RADIUS_RATIO = 3.5
 const MIN_SCENARIO_SPAN_MINUTES = 10
 const MAX_SCENARIO_SPAN_MINUTES = 23 * 60
 const ANCHOR_SNAP_WINDOW_MINUTES = 5
-const DIAL_DAY_COLOR = 'rgba(255, 216, 170, 0.82)'
-const DIAL_NIGHT_COLOR = 'rgba(93, 121, 156, 1)'
 const HANDLE_TAP_HOLD_MS = 300
 const HANDLE_TAP_MOVE_TOLERANCE = 6
 const minuteStep = 5
@@ -82,6 +91,12 @@ const HALF_DAY_MINUTES = MINUTES_PER_DAY / 2
 const FULL_CIRCLE_DEG = 360
 const HANDLE_EMIT_THROTTLE_MS = 80
 const AUTO_BRIGHTNESS_WARM_HEX = '#fff4dd'
+const CONFLICT_STROKE = '#f8fafc'
+const OVERLAP_TYPE_LABELS = {
+    'light.brightness': 'Наложение по яркости',
+    'light.color.cct': 'Наложение по цвету',
+    'light.color.hsv': 'Наложение по цвету'
+}
 
 const dialElement = ref(null)
 const dialMetrics = reactive({
@@ -136,8 +151,6 @@ const mainHandleSize = computed(() => 40 * dialScale.value)
 
 const ratioToInsetPercent = (ratio) => `${(((1 - ratio) / 2) * 100).toFixed(4)}%`
 
-const TICK_OUTER_RADIUS_NORM = FACE_CENTER - FACE_CENTER / TICK_EDGE_RATIO
-const NUMBER_RADIUS_NORM = FACE_CENTER - FACE_CENTER / NUMBER_RADIUS_RATIO
 
 const geom = computed(() => {
     const dialRadiusPx = dialMetrics.radius || BASE_DIAL_SIZE / 2
@@ -196,6 +209,7 @@ const showDialCenterColor = computed(() => Boolean(showDialCenter.value && dialC
 const showDialCenterTemp = computed(
     () => showDialCenterColor.value && Number.isFinite(dialCenterState.value?.temperature)
 )
+const showDialCenterLabel = computed(() => showDialCenterColor.value && !showDialCenterTemp.value)
 const dialCenterSwatchStyle = computed(() => {
     const colorHex = dialCenterState.value?.colorHex
     return colorHex ? { backgroundColor: colorHex } : {}
@@ -319,6 +333,116 @@ const scenarioArcGradientVector = computed(() => {
     return { x1: startPoint.x, y1: startPoint.y, x2: endPoint.x, y2: endPoint.y }
 })
 
+const conflictHover = ref(null)
+const conflictPinned = ref(null)
+const activeConflict = computed(() => conflictPinned.value || conflictHover.value)
+const conflictFormatterCache = new Map()
+
+function getConflictFormatter() {
+    const tz = props.timeZone || ''
+    const key = tz || 'local'
+    if (conflictFormatterCache.has(key)) return conflictFormatterCache.get(key)
+    const opts = {
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23'
+    }
+    if (tz) opts.timeZone = tz
+    const fmt = new Intl.DateTimeFormat('ru-RU', opts)
+    conflictFormatterCache.set(key, fmt)
+    return fmt
+}
+
+function minutesFromTimestamp(ts) {
+    const date = ts != null ? new Date(ts) : null
+    if (!date || Number.isNaN(date.getTime())) return null
+    const parts = getConflictFormatter().formatToParts(date)
+    const hours = Number(parts.find((p) => p.type === 'hour')?.value)
+    const minutes = Number(parts.find((p) => p.type === 'minute')?.value)
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null
+    return ((hours * 60 + minutes) % MINUTES_PER_DAY + MINUTES_PER_DAY) % MINUTES_PER_DAY
+}
+
+function formatOverlapWindow(window) {
+    if (!window?.start || !window?.end) return ''
+    const fmt = getConflictFormatter()
+    return `${fmt.format(new Date(window.start))}–${fmt.format(new Date(window.end))}`
+}
+
+function resolveOverlapName(overlap) {
+    const id = overlap?.scenarioId
+    if (!id) return 'Сценарий'
+    return props.overlapNames?.[id] || String(id)
+}
+
+function formatOverlapTypes(overlap) {
+    const list = Array.isArray(overlap?.types) ? overlap.types : []
+    return list.map((type) => OVERLAP_TYPE_LABELS[type] || 'Наложение').filter(Boolean).join(', ')
+}
+
+function onConflictEnter(overlap) {
+    if (conflictPinned.value) return
+    conflictHover.value = overlap
+}
+
+function onConflictLeave() {
+    if (conflictPinned.value) return
+    conflictHover.value = null
+}
+
+function toggleConflictPin(overlap) {
+    if (conflictPinned.value?.scenarioId === overlap?.scenarioId) {
+        conflictPinned.value = null
+        conflictHover.value = null
+        return
+    }
+    conflictPinned.value = overlap
+    conflictHover.value = overlap
+}
+
+function clearConflictPin() {
+    conflictPinned.value = null
+    conflictHover.value = null
+}
+
+const conflictSegments = computed(() => {
+    const overlaps = Array.isArray(props.overlaps) ? props.overlaps : []
+    if (!overlaps.length) return []
+    const radius = geom.value.scheduleRadius
+    const strokeWidth = Math.max(3, geom.value.scheduleStrokeWidth * 0.7)
+    const minSpanMinutes = 6
+    if (!Number.isFinite(radius) || radius <= 0 || !Number.isFinite(strokeWidth) || strokeWidth <= 0) return []
+    const segments = []
+    overlaps.forEach((overlap) => {
+        const windows = Array.isArray(overlap?.windows) ? overlap.windows : []
+        windows.forEach((window) => {
+            const startMin = minutesFromTimestamp(window.start)
+            const endMin = minutesFromTimestamp(window.end)
+            if (startMin == null || endMin == null) return
+            const spanMinutes = Math.max(1, Math.round((window.end - window.start) / 60000))
+            if (spanMinutes >= MINUTES_PER_DAY - 1) {
+                segments.push({
+                    kind: 'circle',
+                    radius,
+                    width: strokeWidth,
+                    overlap
+                })
+                return
+            }
+            const adjustedEnd = startMin + Math.max(spanMinutes, minSpanMinutes)
+            const startAngle = minuteToAngle(startMin)
+            const endAngle = minuteToAngle(adjustedEnd)
+            segments.push({
+                kind: 'path',
+                path: describeArcPath(radius, startAngle, endAngle),
+                width: strokeWidth,
+                overlap
+            })
+        })
+    })
+    return segments
+})
+
 const scenarioBoundaryMarks = computed(() => {
     const radius = geom.value.scheduleRadius
     const width = geom.value.scheduleStrokeWidth
@@ -366,63 +490,6 @@ const currentNeedle = computed(() => {
     }
 })
 
-function isMinuteInDay(minute) {
-    const sunrise = normalizeMinutes(props.sunriseMinute || 0)
-    const sunset = normalizeMinutes(props.sunsetMinute || 0)
-    const value = normalizeMinutes(minute)
-    if (sunrise === sunset) return true
-    if (sunrise < sunset) return value >= sunrise && value < sunset
-    return value >= sunrise || value < sunset
-}
-
-const hourLabels = computed(() => Array.from({ length: 12 }, (_, i) => i * 2))
-const innerTickMarks = computed(() => {
-    const tickCount = 96
-    const outer = TICK_OUTER_RADIUS_NORM
-    const majorInner = outer - 5
-    const hourInner = outer - 5
-    const minorInner = outer - 2
-    return Array.from({ length: tickCount }, (_, index) => {
-        const minute = (index / tickCount) * MINUTES_PER_DAY
-        const angle = minuteToAngle(minute)
-        const isMajor = index % 8 === 0
-        const isHour = index % 4 === 0
-        const start = angleToPoint(angle, outer)
-        const end = angleToPoint(angle, isMajor ? majorInner : isHour ? hourInner : minorInner)
-        const day = isMinuteInDay(minute)
-        const color = day ? DIAL_DAY_COLOR : DIAL_NIGHT_COLOR
-        return {
-            index,
-            major: isMajor,
-            hour: isHour,
-            day,
-            color,
-            x1: start.x,
-            y1: start.y,
-            x2: end.x,
-            y2: end.y
-        }
-    })
-})
-
-const innerHourNumberItems = computed(() => {
-    const radius = NUMBER_RADIUS_NORM
-    return hourLabels.value.map((hour) => {
-        const minute = hour * 60
-        const angle = minuteToAngle(minute)
-        const coord = angleToPoint(angle, radius)
-        const day = isMinuteInDay(minute)
-        const major = hour % 6 === 0
-        const color = day ? DIAL_DAY_COLOR : DIAL_NIGHT_COLOR
-        return {
-            hour,
-            x: coord.x,
-            y: coord.y,
-            major,
-            color
-        }
-    })
-})
 const handleOrbitRadius = computed(() => {
     const dialRadius = dialMetrics.radius
     if (!Number.isFinite(dialRadius) || dialRadius <= 0) return 0
@@ -897,9 +964,9 @@ function stopMinutes(stop) {
 }
 
 function stopLabelData(stop) {
-    if (!stop) return { time: '', meta: '', isSun: false, anchor: '' }
+    if (!stop) return { time: '', meta: '', isSun: false, anchor: '', isOffset: false }
     if (stop.mode === 'clock') {
-        return { time: minutesToTimeString(stopMinutes(stop)), meta: '', isSun: false, anchor: '' }
+        return { time: minutesToTimeString(stopMinutes(stop)), meta: '', isSun: false, anchor: '', isOffset: false }
     }
     const isSunrise = stop.mode === 'sunrise'
     const anchorWord = isSunrise ? 'рассвета' : 'заката'
@@ -909,7 +976,7 @@ function stopLabelData(stop) {
     const offset = stop.offset || 0
     const actualTime = minutesToTimeString(normalizeMinutes((anchorMinutes || 0) + offset))
     if (offset === 0) {
-        return { time: actualTime, meta: anchorLabel, isSun: true, anchor: anchorType }
+        return { time: actualTime, meta: anchorLabel, isSun: true, anchor: anchorType, isOffset: false }
     }
     const abs = Math.abs(offset)
     const hours = Math.floor(abs / 60)
@@ -918,8 +985,8 @@ function stopLabelData(stop) {
     if (hours && minutes) unit = `${hours} ч ${minutes} мин`
     else if (hours) unit = `${hours} ч`
     else unit = `${minutes || abs} мин`
-    const phrase = offset > 0 ? `${unit} после ${anchorWord}` : `${unit} до ${anchorWord}`
-    return { time: actualTime, meta: phrase, isSun: true, anchor: anchorType }
+    const phrase = offset > 0 ? `Через ${unit} после ${anchorWord}` : `За ${unit} до ${anchorWord}`
+    return { time: actualTime, meta: phrase, isSun: true, anchor: anchorType, isOffset: true }
 }
 
 function minutesToTimeString(minute) {
@@ -937,7 +1004,7 @@ function minutesToTimeString(minute) {
                 <span class="time-chip-label">Старт</span>
                 <div class="time-chip-value">
                     <div class="time-chip-main" :class="{ offset: startLabel.isSun }">
-                        <strong class="time-chip-time" :class="{ sun: startLabel.isSun }">{{ startLabel.time }}</strong>
+                        <strong class="time-chip-time">{{ startLabel.time }}</strong>
                         <!--
                         <span v-if="startLabel.isSun" class="time-chip-sun" aria-hidden="true">
                             <svg v-if="startLabel.anchor === 'sunrise'" viewBox="0 0 32 32" class="sun-icon"
@@ -970,14 +1037,15 @@ function minutesToTimeString(minute) {
                         </span>
                         -->
                     </div>
-                    <span v-if="startLabel.meta" class="time-chip-meta" :class="{ sun: startLabel.isSun }">{{ startLabel.meta }}</span>
+                    <span v-if="startLabel.meta" class="time-chip-meta" :class="{ sun: startLabel.isOffset }">{{
+                        startLabel.meta }}</span>
                 </div>
             </button>
             <button type="button" class="time-chip end" @click="emit('open-end-editor')">
                 <span class="time-chip-label">Финиш</span>
                 <div class="time-chip-value">
                     <div class="time-chip-main" :class="{ offset: endLabel.isSun }">
-                        <strong class="time-chip-time" :class="{ sun: endLabel.isSun }">{{ endLabel.time }}</strong>
+                        <strong class="time-chip-time">{{ endLabel.time }}</strong>
                         <!--
                         <span v-if="endLabel.isSun" class="time-chip-sun" aria-hidden="true">
                             <svg v-if="endLabel.anchor === 'sunrise'" viewBox="0 0 32 32" class="sun-icon"
@@ -1010,7 +1078,8 @@ function minutesToTimeString(minute) {
                         </span>
                         -->
                     </div>
-                    <span v-if="endLabel.meta" class="time-chip-meta" :class="{ sun: endLabel.isSun }">{{ endLabel.meta }}</span>
+                    <span v-if="endLabel.meta" class="time-chip-meta" :class="{ sun: endLabel.isOffset }">{{
+                        endLabel.meta }}</span>
                 </div>
             </button>
         </div>
@@ -1041,6 +1110,18 @@ function minutesToTimeString(minute) {
                         fill="none" :stroke="scenarioArc.stroke" :stroke-width="scenarioArc.width"
                         :class="{ pulse: scenarioArc.pulse }" />
                 </g>
+                <g v-if="conflictSegments.length" class="scenario-conflicts">
+                    <template v-for="(segment, idx) in conflictSegments" :key="`conflict-${idx}`">
+                        <path v-if="segment.kind === 'path'" :d="segment.path" :stroke="CONFLICT_STROKE"
+                            :stroke-width="segment.width"
+                            @mouseenter="onConflictEnter(segment.overlap)" @mouseleave="onConflictLeave"
+                            @click.stop="toggleConflictPin(segment.overlap)" />
+                        <circle v-else-if="segment.kind === 'circle'" cx="100" cy="100" :r="segment.radius" fill="none"
+                            :stroke="CONFLICT_STROKE" :stroke-width="segment.width"
+                            @mouseenter="onConflictEnter(segment.overlap)"
+                            @mouseleave="onConflictLeave" @click.stop="toggleConflictPin(segment.overlap)" />
+                    </template>
+                </g>
                 <g v-if="scenarioBoundaryMarks" class="scenario-boundaries">
                     <line class="scenario-boundary" :x1="scenarioBoundaryMarks.start.inner.x"
                         :y1="scenarioBoundaryMarks.start.inner.y" :x2="scenarioBoundaryMarks.start.outer.x"
@@ -1058,25 +1139,14 @@ function minutesToTimeString(minute) {
 
             <div class="dial-face">
                 <svg viewBox="0 0 200 200" class="dial-face-svg">
-                    <circle class="dial-face-bg" cx="100" cy="100" :r="FACE_CENTER" />
-                    <g class="face-ticks">
-                        <line v-for="tick in innerTickMarks" :key="tick.index" :stroke="tick.color"
-                            :class="{ major: tick.major, hour: tick.hour }" :x1="tick.x1" :y1="tick.y1" :x2="tick.x2"
-                            :y2="tick.y2" />
-                    </g>
-                    <g class="face-hours">
-                        <text v-for="item in innerHourNumberItems" :key="item.hour" class="face-hour"
-                            :class="{ major: item.major }" :x="item.x" :y="item.y" :fill="item.color">
-                            {{ item.hour }}
-                        </text>
-                    </g>
+                    <DialFace :sunrise-minute="sunriseMinute" :sunset-minute="sunsetMinute" />
                 </svg>
             </div>
 
             <div v-if="showDialCenter" class="dial-center-info">
                 <div class="dial-center-title">Сейчас</div>
                 <div v-if="showDialCenterColor" class="dial-center-color">
-                    <span class="dial-center-label">Цвет:</span>
+                    <span v-if="showDialCenterLabel" class="dial-center-label">Цвет:</span>
                     <span class="dial-center-swatch" :style="dialCenterSwatchStyle"></span>
                     <span v-if="showDialCenterTemp" class="dial-center-temp">
                         {{ dialCenterState.temperature }}K
@@ -1085,6 +1155,15 @@ function minutesToTimeString(minute) {
                 <div v-if="dialCenterState?.brightness" class="dial-center-brightness">
                     {{ dialCenterState.brightness }}
                 </div>
+            </div>
+
+            <div v-if="activeConflict" class="conflict-tooltip">
+                <div class="conflict-title">{{ resolveOverlapName(activeConflict) }}</div>
+                <div class="conflict-types">{{ formatOverlapTypes(activeConflict) }}</div>
+                <div v-if="activeConflict.windows?.length" class="conflict-window">
+                    {{ activeConflict.windows.map((w) => formatOverlapWindow(w)).join(', ') }}
+                </div>
+                <button type="button" class="conflict-close" @click="clearConflictPin">Скрыть</button>
             </div>
 
             <button class="dial-handle start" :style="startHandleStyle"
@@ -1159,10 +1238,6 @@ function minutesToTimeString(minute) {
     font-size: 20px;
     font-weight: 600;
     line-height: 1;
-}
-
-.time-chip-time.sun {
-    color: #f9c316;
 }
 
 .time-chip-sun {
@@ -1347,19 +1422,6 @@ function minutesToTimeString(minute) {
     line-height: 1;
 }
 
-.face-ticks line {
-    stroke-linecap: round;
-    stroke-width: 1px;
-}
-
-.face-hour {
-    font-size: 14px;
-    font-weight: 600;
-    dominant-baseline: middle;
-    text-anchor: middle;
-    letter-spacing: 0.04em;
-}
-
 @keyframes dial-segment-pulse {
     0% {
         opacity: 0.6;
@@ -1389,7 +1451,7 @@ function minutesToTimeString(minute) {
     height: 100%;
     z-index: 3;
     filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.3)) drop-shadow(0 0 var(--schedule-blur, 12px) rgba(255, 255, 255, 0.08));
-    pointer-events: none;
+    pointer-events: auto;
 }
 
 .sun-marker-overlay {
@@ -1408,6 +1470,61 @@ function minutesToTimeString(minute) {
     stroke-linejoin: round;
     opacity: 0.95;
     shape-rendering: geometricPrecision;
+    pointer-events: none;
+}
+
+.scenario-conflicts path,
+.scenario-conflicts circle {
+    fill: none;
+    stroke: rgba(248, 250, 252, 0.9);
+    stroke-dasharray: 4 6;
+    stroke-linecap: round;
+    opacity: 1;
+    cursor: pointer;
+    pointer-events: auto;
+}
+
+.conflict-tooltip {
+    position: absolute;
+    left: 16px;
+    right: 16px;
+    bottom: 18px;
+    z-index: 9;
+    background: rgba(15, 23, 42, 0.88);
+    border: 1px dashed rgba(255, 255, 255, 0.3);
+    border-radius: 14px;
+    padding: 10px 12px;
+    color: #e2e8f0;
+    display: grid;
+    gap: 4px;
+    font-size: 12px;
+}
+
+.conflict-title {
+    font-weight: 600;
+    color: #f8fafc;
+}
+
+.conflict-types {
+    color: #e2e8f0;
+}
+
+.conflict-window {
+    color: #cbd5f5;
+}
+
+.conflict-close {
+    margin-top: 4px;
+    border: none;
+    background: transparent;
+    color: #a5b4fc;
+    font-size: 11px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.conflict-close:hover {
+    color: #fff;
 }
 
 .scenario-cap {
@@ -1451,5 +1568,4 @@ function minutesToTimeString(minute) {
 .dial.inactive .scenario-ring-group circle {
     opacity: 0.65;
 }
-
 </style>
