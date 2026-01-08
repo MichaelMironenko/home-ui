@@ -12,7 +12,7 @@ const PAUSE_REASON_LABELS = {
     presence_away: 'Никого нет дома'
 }
 
-const PAUSE_MANUAL_SOURCES = new Set(['manual', 'manual_pause', 'app_button_pause'])
+const PAUSE_MANUAL_SOURCES = new Set(['manual', 'manual_pause'])
 
 const CURRENT_WINDOW_KEYS = ['window', 'currentWindow', 'activeWindow']
 const NEXT_WINDOW_KEYS = ['nextWindow', 'upcomingWindow', 'next']
@@ -201,7 +201,10 @@ function formatTime(timestamp, tz) {
 
 export function resolvePauseReason(pause, status) {
     const pauseReason = pause?.reason
-    const source = pauseReason?.source || status?.result?.reason
+    const statusReason = status?.result?.reason
+    const statusNormalized = statusReason ? String(statusReason).toLowerCase() : ''
+    if (statusNormalized === 'app_button_pause') return ''
+    const source = pauseReason?.source || statusReason
     const normalized = source ? String(source).toLowerCase() : ''
     if (PAUSE_MANUAL_SOURCES.has(normalized)) return 'Ручная коррекция'
     if (normalized && PAUSE_REASON_LABELS[normalized]) return PAUSE_REASON_LABELS[normalized]

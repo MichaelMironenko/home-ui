@@ -1287,7 +1287,7 @@ async function toggleRuntimePause() {
         } else {
             const res = await scenarioRequest('/scenario/pause', { method: 'POST', body: { id: scenario.id } })
             scenarioPauseInfo.value =
-                res?.pause ?? res?.result?.pause ?? { setAt: Date.now(), reason: { source: 'manual' } }
+                res?.pause ?? res?.result?.pause ?? { setAt: Date.now(), reason: { source: 'app_button_pause' } }
             if (res?.status) scenarioStatusSummary.value = summarizeStatusRecord(res.status)
             scenarioMessage.value = 'Сценарий поставлен на паузу'
         }

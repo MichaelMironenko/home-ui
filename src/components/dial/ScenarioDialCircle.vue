@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, reactive, ref, toRaw, watch } from 'vue'
 import { stopColorHex } from '../../utils/colorUtils'
+import { useConflictPopup } from '../../composables/useConflictPopup'
 import DialFace from './DialFace.vue'
 
 const props = defineProps({
@@ -91,12 +92,7 @@ const HALF_DAY_MINUTES = MINUTES_PER_DAY / 2
 const FULL_CIRCLE_DEG = 360
 const HANDLE_EMIT_THROTTLE_MS = 80
 const AUTO_BRIGHTNESS_WARM_HEX = '#fff4dd'
-const CONFLICT_STROKE = '#f8fafc'
-const OVERLAP_TYPE_LABELS = {
-    'light.brightness': 'Наложение по яркости',
-    'light.color.cct': 'Наложение по цвету',
-    'light.color.hsv': 'Наложение по цвету'
-}
+const CONFLICT_STROKE = '#00000022'
 
 const dialElement = ref(null)
 const dialMetrics = reactive({
@@ -333,13 +329,11 @@ const scenarioArcGradientVector = computed(() => {
     return { x1: startPoint.x, y1: startPoint.y, x2: endPoint.x, y2: endPoint.y }
 })
 
-const conflictHover = ref(null)
-const conflictPinned = ref(null)
-const activeConflict = computed(() => conflictPinned.value || conflictHover.value)
+const conflictPopupEl = ref(null)
 const conflictFormatterCache = new Map()
 
-function getConflictFormatter() {
-    const tz = props.timeZone || ''
+function getConflictFormatter(tzOverride = '') {
+    const tz = tzOverride || props.timeZone || ''
     const key = tz || 'local'
     if (conflictFormatterCache.has(key)) return conflictFormatterCache.get(key)
     const opts = {
@@ -353,56 +347,28 @@ function getConflictFormatter() {
     return fmt
 }
 
-function minutesFromTimestamp(ts) {
+function minutesFromTimestamp(ts, tz) {
     const date = ts != null ? new Date(ts) : null
     if (!date || Number.isNaN(date.getTime())) return null
-    const parts = getConflictFormatter().formatToParts(date)
+    const parts = getConflictFormatter(tz).formatToParts(date)
     const hours = Number(parts.find((p) => p.type === 'hour')?.value)
     const minutes = Number(parts.find((p) => p.type === 'minute')?.value)
     if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null
     return ((hours * 60 + minutes) % MINUTES_PER_DAY + MINUTES_PER_DAY) % MINUTES_PER_DAY
 }
 
-function formatOverlapWindow(window) {
+function formatOverlapWindow(window, tz) {
     if (!window?.start || !window?.end) return ''
-    const fmt = getConflictFormatter()
+    const fmt = getConflictFormatter(tz)
     return `${fmt.format(new Date(window.start))}–${fmt.format(new Date(window.end))}`
 }
 
-function resolveOverlapName(overlap) {
-    const id = overlap?.scenarioId
-    if (!id) return 'Сценарий'
-    return props.overlapNames?.[id] || String(id)
-}
-
-function formatOverlapTypes(overlap) {
-    const list = Array.isArray(overlap?.types) ? overlap.types : []
-    return list.map((type) => OVERLAP_TYPE_LABELS[type] || 'Наложение').filter(Boolean).join(', ')
-}
-
-function onConflictEnter(overlap) {
-    if (conflictPinned.value) return
-    conflictHover.value = overlap
-}
-
-function onConflictLeave() {
-    if (conflictPinned.value) return
-    conflictHover.value = null
-}
-
-function toggleConflictPin(overlap) {
-    if (conflictPinned.value?.scenarioId === overlap?.scenarioId) {
-        conflictPinned.value = null
-        conflictHover.value = null
-        return
-    }
-    conflictPinned.value = overlap
-    conflictHover.value = overlap
-}
-
-function clearConflictPin() {
-    conflictPinned.value = null
-    conflictHover.value = null
+function formatConflictLabel(overlap) {
+    const types = Array.isArray(overlap?.types) ? overlap.types : []
+    if (types.includes('light.brightness')) return 'Наложение по яркости'
+    if (types.includes('light.color.cct')) return 'Наложение по температуре'
+    if (types.includes('light.color.hsv')) return 'Наложение по цвету'
+    return 'Наложение'
 }
 
 const conflictSegments = computed(() => {
@@ -416,8 +382,8 @@ const conflictSegments = computed(() => {
     overlaps.forEach((overlap) => {
         const windows = Array.isArray(overlap?.windows) ? overlap.windows : []
         windows.forEach((window) => {
-            const startMin = minutesFromTimestamp(window.start)
-            const endMin = minutesFromTimestamp(window.end)
+            const startMin = minutesFromTimestamp(window.start, props.timeZone)
+            const endMin = minutesFromTimestamp(window.end, props.timeZone)
             if (startMin == null || endMin == null) return
             const spanMinutes = Math.max(1, Math.round((window.end - window.start) / 60000))
             if (spanMinutes >= MINUTES_PER_DAY - 1) {
@@ -425,7 +391,9 @@ const conflictSegments = computed(() => {
                     kind: 'circle',
                     radius,
                     width: strokeWidth,
-                    overlap
+                    overlap,
+                    window,
+                    tz: props.timeZone
                 })
                 return
             }
@@ -436,11 +404,26 @@ const conflictSegments = computed(() => {
                 kind: 'path',
                 path: describeArcPath(radius, startAngle, endAngle),
                 width: strokeWidth,
-                overlap
+                overlap,
+                window,
+                tz: props.timeZone
             })
         })
     })
     return segments
+})
+
+const {
+    conflictPopup,
+    conflictPopupStyle,
+    handleConflictHover,
+    handleConflictClick,
+    clearConflictPopup
+} = useConflictPopup({
+    orbitDialEl: dialElement,
+    conflictPopupEl,
+    formatOverlapWindow,
+    formatConflictLabel
 })
 
 const scenarioBoundaryMarks = computed(() => {
@@ -488,6 +471,25 @@ const currentNeedle = computed(() => {
         start: angleToPoint(angle, needleInner),
         end: angleToPoint(angle, needleOuter)
     }
+})
+
+const evenHourGuides = computed(() => {
+    const radius = geom.value.scheduleRadius
+    const strokeWidth = geom.value.scheduleStrokeWidth
+    if (!Number.isFinite(radius) || !Number.isFinite(strokeWidth)) return []
+    const inner = radius - strokeWidth / 2
+    const outer = radius + strokeWidth / 2
+    const guides = []
+    for (let hour = 0; hour < 24; hour += 2) {
+        const minute = hour * 60
+        const angle = minuteToAngle(minute)
+        guides.push({
+            minute,
+            start: angleToPoint(angle, inner),
+            end: angleToPoint(angle, outer)
+        })
+    }
+    return guides
 })
 
 const handleOrbitRadius = computed(() => {
@@ -1110,16 +1112,22 @@ function minutesToTimeString(minute) {
                         fill="none" :stroke="scenarioArc.stroke" :stroke-width="scenarioArc.width"
                         :class="{ pulse: scenarioArc.pulse }" />
                 </g>
-                <g v-if="conflictSegments.length" class="scenario-conflicts">
+                <g v-if="conflictSegments.length" class="scenario-conflicts" @pointerleave="clearConflictPopup">
                     <template v-for="(segment, idx) in conflictSegments" :key="`conflict-${idx}`">
+                        <path v-if="segment.kind === 'path'" class="scenario-conflict-hit" :d="segment.path"
+                            :stroke-width="segment.width" @pointerdown.stop
+                            @pointerenter="(event) => handleConflictHover(segment, event)"
+                            @pointerleave="clearConflictPopup"
+                            @click.stop="(event) => handleConflictClick(segment, event)" />
                         <path v-if="segment.kind === 'path'" :d="segment.path" :stroke="CONFLICT_STROKE"
-                            :stroke-width="segment.width"
-                            @mouseenter="onConflictEnter(segment.overlap)" @mouseleave="onConflictLeave"
-                            @click.stop="toggleConflictPin(segment.overlap)" />
+                            :stroke-width="segment.width" />
+                        <circle v-else-if="segment.kind === 'circle'" class="scenario-conflict-hit" cx="100" cy="100"
+                            :r="segment.radius" fill="none" :stroke-width="segment.width" @pointerdown.stop
+                            @pointerenter="(event) => handleConflictHover(segment, event)"
+                            @pointerleave="clearConflictPopup"
+                            @click.stop="(event) => handleConflictClick(segment, event)" />
                         <circle v-else-if="segment.kind === 'circle'" cx="100" cy="100" :r="segment.radius" fill="none"
-                            :stroke="CONFLICT_STROKE" :stroke-width="segment.width"
-                            @mouseenter="onConflictEnter(segment.overlap)"
-                            @mouseleave="onConflictLeave" @click.stop="toggleConflictPin(segment.overlap)" />
+                            :stroke="CONFLICT_STROKE" :stroke-width="segment.width" />
                     </template>
                 </g>
                 <g v-if="scenarioBoundaryMarks" class="scenario-boundaries">
@@ -1157,13 +1165,9 @@ function minutesToTimeString(minute) {
                 </div>
             </div>
 
-            <div v-if="activeConflict" class="conflict-tooltip">
-                <div class="conflict-title">{{ resolveOverlapName(activeConflict) }}</div>
-                <div class="conflict-types">{{ formatOverlapTypes(activeConflict) }}</div>
-                <div v-if="activeConflict.windows?.length" class="conflict-window">
-                    {{ activeConflict.windows.map((w) => formatOverlapWindow(w)).join(', ') }}
-                </div>
-                <button type="button" class="conflict-close" @click="clearConflictPin">Скрыть</button>
+            <div v-if="conflictPopup" ref="conflictPopupEl" class="conflict-hint" :style="conflictPopupStyle">
+                <span>{{ conflictPopup.time }}</span>
+                <span>{{ conflictPopup.label }}</span>
             </div>
 
             <button class="dial-handle start" :style="startHandleStyle"
@@ -1473,58 +1477,47 @@ function minutesToTimeString(minute) {
     pointer-events: none;
 }
 
+.hour-guides line {
+    stroke: rgba(255, 255, 255, 0.16);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+}
+
 .scenario-conflicts path,
 .scenario-conflicts circle {
     fill: none;
-    stroke: rgba(248, 250, 252, 0.9);
-    stroke-dasharray: 4 6;
-    stroke-linecap: round;
+    stroke-dasharray: 1 4;
     opacity: 1;
-    cursor: pointer;
     pointer-events: auto;
 }
 
-.conflict-tooltip {
+.scenario-conflicts {
+    opacity: 1;
+    filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.35));
+}
+
+.scenario-conflict-hit {
+    stroke: transparent;
+    stroke-dasharray: none;
+    stroke-linecap: round;
+    pointer-events: stroke;
+    cursor: pointer;
+}
+
+.conflict-hint {
     position: absolute;
-    left: 16px;
-    right: 16px;
-    bottom: 18px;
-    z-index: 9;
-    background: rgba(15, 23, 42, 0.88);
-    border: 1px dashed rgba(255, 255, 255, 0.3);
-    border-radius: 14px;
-    padding: 10px 12px;
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 16px;
+    padding: 8px 12px;
     color: #e2e8f0;
     display: grid;
     gap: 4px;
     font-size: 12px;
-}
-
-.conflict-title {
-    font-weight: 600;
-    color: #f8fafc;
-}
-
-.conflict-types {
-    color: #e2e8f0;
-}
-
-.conflict-window {
-    color: #cbd5f5;
-}
-
-.conflict-close {
-    margin-top: 4px;
-    border: none;
-    background: transparent;
-    color: #a5b4fc;
-    font-size: 11px;
-    text-align: left;
-    cursor: pointer;
-}
-
-.conflict-close:hover {
-    color: #fff;
+    width: max-content;
+    max-width: 220px;
+    pointer-events: none;
+    z-index: 30;
 }
 
 .scenario-cap {
