@@ -169,7 +169,8 @@ function angleToPoint(angle, radius) {
             </svg>
             <div class="orbit-dial-hint">
                 <span>Карта дня</span>
-                <span class="orbit-dial-sub">Наведите на дугу, чтобы увидеть сценарий</span>
+                <span class="orbit-dial-sub orbit-dial-sub--desktop">Наведите на дугу, чтобы увидеть сценарий</span>
+                <span class="orbit-dial-sub orbit-dial-sub--mobile">Нажмите на дугу, чтобы показать сценарий</span>
             </div>
             <div v-if="conflictPopup" ref="conflictPopupEl" class="orbit-conflict-hint" :style="conflictPopupStyle">
                 <span>{{ conflictPopup.time }}</span>
@@ -322,6 +323,10 @@ function angleToPoint(angle, radius) {
     font-weight: 500;
 }
 
+.orbit-dial-sub--mobile {
+    display: none;
+}
+
 .orbit-conflict-hint {
     position: absolute;
     background: rgba(15, 23, 42, 0.8);
@@ -349,6 +354,16 @@ function angleToPoint(angle, radius) {
 
     100% {
         opacity: 0.7;
+    }
+}
+
+@media (max-width: 640px) {
+    .orbit-dial-sub--desktop {
+        display: none;
+    }
+
+    .orbit-dial-sub--mobile {
+        display: inline;
     }
 }
 </style>

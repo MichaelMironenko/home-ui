@@ -46,6 +46,20 @@ async function logout() {
 
         <router-view />
 
+        <footer class="app-footer" aria-label="Контакты и документы">
+            <div class="footer-inner">
+                <div class="footer-contact">
+                    <span class="footer-label">Контакты</span>
+                    <a href="mailto:info@extrahub.ru">info@extrahub.ru</a>
+                </div>
+                <div class="footer-copy">© Extrahub 2026</div>
+                <div class="footer-links">
+                    <RouterLink :to="{ name: 'agreement' }">Пользовательское соглашение</RouterLink>
+                    <RouterLink :to="{ name: 'consent' }">Политика обработки персональных данных</RouterLink>
+                </div>
+            </div>
+        </footer>
+
         <footer v-if="!isLoginRoute" class="mobile-tabbar" role="navigation" aria-label="Главные разделы">
             <RouterLink :to="{ name: 'scenarios-list' }" class="tab-link" :class="{ active: isScenariosRoute }">
                 <span class="icon">
@@ -205,6 +219,74 @@ nav {
     border-color: rgba(168, 85, 247, 0.5);
 }
 
+.app-footer {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 0;
+    width: min(960px, 100%);
+    padding: 16px 24px calc(16px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--surface-border);
+    background: rgba(17, 24, 39, 0.9);
+    z-index: 5;
+}
+
+.footer-inner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px 24px;
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.footer-contact {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.footer-label {
+    letter-spacing: 0.08em;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 11px;
+    color: var(--text-subtle);
+}
+
+.footer-contact a {
+    color: var(--text-primary);
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.footer-contact a:hover {
+    text-decoration: underline;
+}
+
+.footer-links {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 12px 18px;
+}
+
+.footer-links a {
+    color: var(--text-muted);
+    text-decoration: none;
+    transition: color var(--transition-base);
+}
+
+.footer-links a:hover {
+    color: var(--text-primary);
+    text-decoration: underline;
+}
+
+.footer-copy {
+    font-size: 12px;
+    color: var(--text-subtle);
+}
+
 .mobile-tabbar {
     position: fixed;
     left: 50%;
@@ -297,12 +379,20 @@ nav {
         display: flex;
     }
 
+    .app-footer {
+        display: none;
+    }
+
     :global(.page-shell) {
         padding-bottom: 120px;
     }
 }
 
 @media (min-width: 901px) {
+    .app-shell {
+        padding-bottom: 72px;
+    }
+
     .mobile-tabbar {
         display: none;
     }

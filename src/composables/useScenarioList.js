@@ -8,11 +8,12 @@ function mapScenarioEntry(entry) {
     const cleanedId = key.replace(/^scenarios\//, '').replace(/\.json$/i, '')
     const id = String(entry?.id || cleanedId || '').trim()
     const name = String(entry?.name || cleanedId || id || '').trim() || 'Без имени'
+    const statusSummary = summarizeStatusRecord(entry?.status || null)
     if (entry?.scenario) {
         const meta = entry?.lastModified != null || entry?.etag
             ? { lastModified: entry.lastModified, etag: entry?.etag || null }
             : null
-        cacheScenarioUpdate(entry.scenario, meta)
+        cacheScenarioUpdate(entry.scenario, meta, statusSummary)
     }
     const time = entry?.time || entry?.scenario?.time || null
     return {
@@ -23,7 +24,7 @@ function mapScenarioEntry(entry) {
         lastModified: entry?.lastModified || '',
         etag: entry?.etag || '',
         pause: entry?.pause || null,
-        status: summarizeStatusRecord(entry?.status || null),
+        status: statusSummary,
         type: entry?.type || null,
         disabled: entry?.disabled === true,
         time,

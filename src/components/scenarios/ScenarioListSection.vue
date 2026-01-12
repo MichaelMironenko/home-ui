@@ -25,6 +25,10 @@ const props = defineProps({
     scenarioKey: {
         type: Function,
         required: true
+    },
+    scenarioCardId: {
+        type: Function,
+        required: true
     }
 })
 
@@ -119,7 +123,7 @@ function canTogglePause(item) {
                 paused: isPaused(item),
                 disabled: item.disabled,
                 active: scenarioKey(item) === activeScenarioId
-            }" role="link" tabindex="0" @keyup.enter="handleCardEnter(item)"
+            }" :id="scenarioCardId(item)" role="link" tabindex="0" @keyup.enter="handleCardEnter(item)"
                 @mouseenter="emit('hover', scenarioKey(item))" @mouseleave="emit('hover-clear', scenarioKey(item))">
                 <a class="card-link-overlay" :href="scenarioLinkHref(item)"
                     :aria-label="'Открыть сценарий «' + (item.name || 'Без имени') + '»'"

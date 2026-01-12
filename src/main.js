@@ -14,6 +14,7 @@ const EventsView = () => import('./views/EventsView.vue')
 const NotFoundView = () => import('./views/NotFoundView.vue')
 const LoginView = () => import('./views/LoginView.vue')
 const ConsentView = () => import('./views/ConsentView.vue')
+const UserAgreementView = () => import('./views/UserAgreementView.vue')
 const ProfileView = () => import('./views/ProfileView.vue')
 
 const router = createRouter({
@@ -28,6 +29,7 @@ const router = createRouter({
     { path: '/auto-light/:id', name: 'auto-light-edit', component: AutoLightScenarioView, props: true },
     { path: '/profile', name: 'profile', component: ProfileView },
     { path: '/events', name: 'events', component: EventsView },
+    { path: '/agreement', name: 'agreement', component: UserAgreementView, meta: { public: true } },
     { path: '/consent', name: 'consent', component: ConsentView, meta: { public: true } },
     { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
     { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFoundView }

@@ -13,6 +13,9 @@ const nowTick = ref(Date.now())
 let nowTimer = null
 const hoveredScenarioId = ref(null)
 const pinnedScenarioId = ref(null)
+const isMobile = ref(false)
+let mobileMediaQuery = null
+let mobileMediaListener = null
 
 const { cfg, loadConfig, scenariosRequest } = useScenariosApi()
 const {
@@ -82,6 +85,37 @@ function togglePinnedScenario(key) {
     pinnedScenarioId.value = pinnedScenarioId.value === key ? null : key
 }
 
+function scenarioDomId(key) {
+    const safe = String(key || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, '_')
+    return `scenario-card-${safe || 'unknown'}`
+}
+
+function scenarioCardId(item) {
+    return scenarioDomId(scenarioKey(item))
+}
+
+function scrollToScenario(key) {
+    if (!key || typeof document === 'undefined') return
+    const target = document.getElementById(scenarioDomId(key))
+    if (!target) return
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function handleRingToggle(key) {
+    togglePinnedScenario(key)
+    if (isMobile.value) {
+        scrollToScenario(key)
+    }
+}
+
+function syncMobileFlag() {
+    if (!mobileMediaQuery) return
+    isMobile.value = mobileMediaQuery.matches
+}
+
 onMounted(async () => {
     try {
         await loadConfig()
@@ -94,6 +128,16 @@ onMounted(async () => {
             nowTick.value = Date.now()
         }, 30000)
     }
+    if (typeof window !== 'undefined' && window.matchMedia) {
+        mobileMediaQuery = window.matchMedia('(max-width: 640px)')
+        mobileMediaListener = () => syncMobileFlag()
+        syncMobileFlag()
+        if (mobileMediaQuery.addEventListener) {
+            mobileMediaQuery.addEventListener('change', mobileMediaListener)
+        } else if (mobileMediaQuery.addListener) {
+            mobileMediaQuery.addListener(mobileMediaListener)
+        }
+    }
 })
 
 onUnmounted(() => {
@@ -101,6 +145,15 @@ onUnmounted(() => {
         clearInterval(nowTimer)
         nowTimer = null
     }
+    if (mobileMediaQuery && mobileMediaListener) {
+        if (mobileMediaQuery.removeEventListener) {
+            mobileMediaQuery.removeEventListener('change', mobileMediaListener)
+        } else if (mobileMediaQuery.removeListener) {
+            mobileMediaQuery.removeListener(mobileMediaListener)
+        }
+    }
+    mobileMediaQuery = null
+    mobileMediaListener = null
 })
 </script>
 
@@ -132,11 +185,12 @@ onUnmounted(() => {
                 :active-scenario-id="activeScenarioId" :active-group-id="activeGroupId"
                 :environment="environment" :dial-face-scale="dial.FACE_SCALE" :current-needle-coords="currentNeedleCoords"
                 :format-overlap-window="formatOverlapWindow" :format-conflict-label="formatConflictLabel"
-                @ring-enter="activateScenario" @ring-leave="deactivateScenario" @ring-toggle-pin="togglePinnedScenario" />
+                @ring-enter="activateScenario" @ring-leave="deactivateScenario" @ring-toggle-pin="handleRingToggle" />
             <ScenarioListSection :scenarios="sortedScenarios" :has-scenarios="hasScenarios"
                 :active-scenario-id="activeScenarioId" :toggling="toggling"
-                :scenario-status-display="scenarioStatusDisplay" :scenario-key="scenarioKey" @toggle-pause="togglePause"
-                @hover="activateScenario" @hover-clear="deactivateScenario" />
+                :scenario-status-display="scenarioStatusDisplay" :scenario-key="scenarioKey"
+                :scenario-card-id="scenarioCardId" @toggle-pause="togglePause" @hover="activateScenario"
+                @hover-clear="deactivateScenario" />
         </section>
     </main>
 </template>

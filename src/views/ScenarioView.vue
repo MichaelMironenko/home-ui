@@ -760,7 +760,10 @@ async function loadScenarioById(id) {
     }
     const cached = getCachedScenarioById(id)
     if (cached?.scenario) {
-        applyScenarioResponse({ scenario: cached.scenario }, { skipScenario: false, skipCache: true })
+        applyScenarioResponse(
+            { scenario: cached.scenario, statusSummary: cached.statusSummary || null },
+            { skipScenario: false, skipCache: true }
+        )
         scenarioLoading.value = false
     }
     scenarioError.value = ''
