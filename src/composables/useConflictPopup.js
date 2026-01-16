@@ -64,7 +64,10 @@ export function useConflictPopup({
         toggleConflictPopup(conflict, event)
     }
 
-    function clearConflictPopup() {
+    function clearConflictPopup(event) {
+        if (event?.pointerType && event.pointerType !== 'mouse') {
+            return
+        }
         if (!conflictPopup.value) return
         conflictPopup.value = null
         conflictPopupStyle.value = {}

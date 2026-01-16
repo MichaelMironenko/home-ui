@@ -522,6 +522,7 @@ const events = ref([])
 const eventsError = ref('')
 const eventsLoading = ref(false)
 let eventsInterval = null
+const EVENT_POLL_INTERVAL_MS = 60 * 1000
 const catalogGroupSignature = computed(() =>
     (catalog.groups || [])
         .map((group) => {
@@ -633,6 +634,31 @@ async function loadScenarioEvents() {
         eventsLoading.value = false
     }
 }
+
+function startEventsPolling() {
+    if (eventsInterval) return
+    eventsInterval = setInterval(() => {
+        loadScenarioEvents()
+    }, EVENT_POLL_INTERVAL_MS)
+}
+
+function stopEventsPolling() {
+    if (!eventsInterval) return
+    clearInterval(eventsInterval)
+    eventsInterval = null
+}
+
+const shouldPollEvents = computed(
+    () => canControlRuntime.value && scenarioRuntimeStatus.value?.kind === 'running'
+)
+
+watch(shouldPollEvents, (enabled) => {
+    if (enabled) {
+        startEventsPolling()
+    } else {
+        stopEventsPolling()
+    }
+}, { immediate: true })
 
 const latestScenarioEvent = computed(() => {
     const list = events.value || []
@@ -878,9 +904,6 @@ onMounted(async () => {
     }
     timeTickerInterval = setInterval(() => {
         timeTicker.value = Date.now()
-    }, 60 * 1000)
-    eventsInterval = setInterval(() => {
-        loadScenarioEvents()
     }, 60 * 1000)
 })
 

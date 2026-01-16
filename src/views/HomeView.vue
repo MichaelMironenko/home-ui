@@ -11,22 +11,28 @@ setDocumentTitle('Устройства')
 setDocumentDescription('Каталог и текущее состояние устройств Яндекс Дома: включайте, отключайте и проверяйте статусы в ExtraHub.')
 
 onMounted(async () => {
-  try {
-    const cfg = await getConfig()
-    const raw = cfg.api || cfg.scenariosURL || ''
-    const normalized = raw.replace(/\/$/, '')
-    apiBase.value = normalized || '/api'
-  } catch (err) {
-    console.warn('[home] failed to load config', err)
-    apiBase.value = '/api'
-  } finally {
-    loading.value = false
-  }
+    try {
+        const cfg = await getConfig()
+        const raw = cfg.api || cfg.scenariosURL || ''
+        const normalized = raw.replace(/\/$/, '')
+        apiBase.value = normalized || '/api'
+    } catch (err) {
+        console.warn('[home] failed to load config', err)
+        apiBase.value = '/api'
+    } finally {
+        loading.value = false
+    }
 })
 </script>
 
 <template>
     <main class="page-shell">
+        <header class="page-header">
+            <h1>Устройства</h1>
+            <p class="devices-hint">
+                Показываются только устройства с поддержкой изменения яркости/цвета и датчики, измеряющие освещенность.
+            </p>
+        </header>
         <DeviceGrid v-if="apiBase" :api-base="apiBase" path="/catalog" />
         <p v-else class="text-dimmed">Загрузка списка устройств…</p>
     </main>
@@ -38,6 +44,19 @@ onMounted(async () => {
     display: flex;
     flex-direction: column;
     gap: 12px;
+}
+
+.devices-header {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+
+.devices-hint {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-muted);
 }
 
 .text-dimmed {

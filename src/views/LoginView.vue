@@ -3,6 +3,7 @@ import { computed, ref, watchEffect } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 import { setDocumentDescription, setDocumentTitle } from '../utils/pageTitle'
+import logoWithoutText from '../assets/logo.svg'
 
 const route = useRoute()
 const auth = useAuth()
@@ -52,6 +53,7 @@ function confirmConsent() {
 <template>
     <main class="login-view">
         <section class="login-card">
+            <img class="login-logo" :src="logoWithoutText" alt="Extrahub" />
             <h1>Вход</h1>
             <p class="lead">
                 Чтобы обеспечить управление домом, требуется авторизация через Яндекс ID.
@@ -116,6 +118,12 @@ function confirmConsent() {
     padding: 32px;
     box-shadow: 0 20px 60px rgba(15, 23, 42, 0.4);
     text-align: center;
+}
+
+.login-logo {
+    width: 140px;
+    margin: -16px auto 18px;
+    display: block;
 }
 
 h1 {

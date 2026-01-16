@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from './composables/useAuth'
+import logoWithText from './assets/logo-with-text.svg'
 
 const route = useRoute()
 const router = useRouter()
@@ -32,7 +33,9 @@ async function logout() {
 <template>
     <div class="app-shell">
         <header v-if="!isLoginRoute" class="app-header">
-            <h1>Smart Home</h1>
+            <RouterLink to="/" class="brand" aria-label="Перейти на главную">
+                <img :src="logoWithText" alt="Extrahub" />
+            </RouterLink>
             <nav>
                 <RouterLink to="/scenarios" class="nav-link" active-class="active">Сценарии</RouterLink>
                 <RouterLink to="/devices" class="nav-link" exact-active-class="active">Устройства</RouterLink>
@@ -137,11 +140,16 @@ async function logout() {
     background: rgba(17, 24, 39, 0.85);
 }
 
-.app-header h1 {
+.brand {
+    display: inline-flex;
+    align-items: center;
     margin: 0;
-    font-size: 22px;
 }
 
+.brand img {
+    height: 36px;
+    display: block;
+}
 nav {
     display: flex;
     gap: 14px;
@@ -306,6 +314,12 @@ nav {
     border-radius: 32px;
     backdrop-filter: blur(18px) saturate(180%);
     z-index: 10;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
 }
 
 .tab-link {
@@ -320,8 +334,12 @@ nav {
     text-decoration: none;
     font-size: 10px;
     font-weight: 600;
-    border-radius: 14px;
+    border-radius: 50px;
     transition: color var(--transition-base), background var(--transition-base), transform var(--transition-base);
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
 }
 
 .tab-link .icon {

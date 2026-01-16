@@ -159,7 +159,7 @@ onUnmounted(() => {
 
 <template>
     <main class="page-shell list">
-        <header class="hero">
+        <header class="hero page-header">
             <div>
                 <h1>Сценарии</h1>
             </div>
@@ -251,12 +251,6 @@ onUnmounted(() => {
 
 .retry-button {
     margin-top: 8px;
-}
-
-.hero h1 {
-    margin: 0;
-    font-size: 28px;
-    color: var(--text-primary);
 }
 
 .subtitle {

@@ -10,7 +10,7 @@ const router = useRouter()
 const isAuthenticated = computed(() => !!auth.user.value)
 const showConsentModal = ref(false)
 
-setDocumentTitle('Что умеет Extrahub?')
+setDocumentTitle('ExtraHub - Интеллектуальные сценарии освещения для Яндекс Дома')
 setDocumentDescription(
     'Интеллектуальные сценарии освещения для Яндекс Дома: плавные переходы, адаптивный свет, учёт вашего присутствия и автоматизация.'
 )

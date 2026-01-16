@@ -170,7 +170,7 @@ function scenarioLinkLocation(group) {
 
 <template>
     <main class="events">
-        <header class="hero">
+        <header class="hero page-header">
             <div>
                 <h1>История событий</h1>
                 <p class="subtitle">Запуски сценариев за последние 12 часов</p>
@@ -254,7 +254,7 @@ function scenarioLinkLocation(group) {
     padding: 24px;
     display: flex;
     flex-direction: column;
-    gap: 24px;
+    gap: 12px;
 }
 
 .hero {
@@ -262,12 +262,6 @@ function scenarioLinkLocation(group) {
     justify-content: space-between;
     align-items: flex-start;
     gap: 16px;
-}
-
-.hero h1 {
-    margin: 0;
-    font-size: 28px;
-    line-height: 1.2;
 }
 
 .subtitle {

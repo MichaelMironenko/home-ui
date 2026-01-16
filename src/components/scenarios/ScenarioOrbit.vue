@@ -203,6 +203,12 @@ function angleToPoint(angle, radius) {
     width: 100%;
     position: relative;
     z-index: 2;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
 }
 
 .orbit-dial-svg {
