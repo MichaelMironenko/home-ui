@@ -1,12 +1,10 @@
 <script setup>
 import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 import { setDocumentDescription, setDocumentTitle } from '../utils/pageTitle'
 import heroPreview from '../assets/hero-preview.svg'
 import colorGradient from '../assets/color-gradient.svg'
 const auth = useAuth()
-const router = useRouter()
 const isAuthenticated = computed(() => !!auth.user.value)
 const showConsentModal = ref(false)
 
@@ -55,24 +53,6 @@ const features = [
 const heroImage = heroPreview
 const moodImage = colorGradient
 
-const steps = [
-    {
-        label: '1',
-        title: 'Выберите устройства',
-        description: 'Поддерживаются отдельные лампы и группы. Extrahub понимает комнату, цветовую температуру и совместимость устройств.',
-    },
-    {
-        label: '2',
-        title: 'Настройте временную шкалу',
-        description: 'Сценарный циферблат показывает рассвет, закат и текущий статус. Просто потяните маркеры или задайте точные значения.',
-    },
-    {
-        label: '3',
-        title: 'Сохраните и отслеживайте',
-        description: 'Сценарии запускаются автоматически, а журнал событий моментально показывает последние изменения.',
-    },
-]
-
 function startLogin() {
     showConsentModal.value = true
 }
@@ -86,13 +66,6 @@ function confirmLogin() {
     auth.login('/scenarios')
 }
 
-function openScenarios() {
-    router.push({ name: 'scenarios-list' })
-}
-
-function openDevices() {
-    router.push({ name: 'devices' })
-}
 </script>
 
 <template>
@@ -103,7 +76,7 @@ function openDevices() {
 
                 <div class="hero-actions">
                     <button v-if="!isAuthenticated" type="button" class="cta" @click="startLogin">
-                        Войти через Яндекс ID
+                        Войти
                     </button>
                 </div>
             </div>
@@ -150,44 +123,10 @@ function openDevices() {
             </div>
         </section>
 
-        <section class="steps">
-            <div class="steps-header">
-                <h2>Как всё работает</h2>
-                <p>Всего три шага, чтобы собрать сценарий и следить за его статусом.</p>
-            </div>
-            <ol>
-                <li v-for="step in steps" :key="step.title">
-                    <span class="step-label">{{ step.label }}</span>
-                    <div>
-                        <h3>{{ step.title }}</h3>
-                        <p>{{ step.description }}</p>
-                    </div>
-                </li>
-            </ol>
-        </section>
-
-        <section class="cta-panel">
-            <div>
-                <h2>Готовы попробовать Extrahub?</h2>
-                <p v-if="!isAuthenticated">
-                    Авторизуйтесь через Яндекс ID, чтобы создать первый сценарий, подобрать устройства и включить
-                    автоматизацию.
-                </p>
-                <p v-else>
-                    Вы уже в системе — продолжайте с панелью сценариев или проверьте состояние устройств.
-                </p>
-            </div>
-            <div class="cta-panel-actions">
-                <button v-if="!isAuthenticated" type="button" class="cta" @click="startLogin">
-                    Войти и запустить сценарий
-                </button>
-                <button v-else type="button" class="cta" @click="openScenarios">
-                    Открыть сценарии
-                </button>
-                <button type="button" class="ghost" @click="openDevices">
-                    Каталог устройств
-                </button>
-            </div>
+        <section v-if="!isAuthenticated" class="login-cta">
+            <button type="button" class="cta" @click="startLogin">
+                Войти
+            </button>
         </section>
         <transition name="fade">
             <div v-if="showConsentModal" class="landing-consent-overlay" role="dialog" aria-modal="true">
@@ -305,8 +244,7 @@ function openDevices() {
     z-index: 1;
 }
 
-.features h2,
-.steps h2 {
+.features h2 {
     margin: 0 0 12px;
     font-size: 28px;
 }
@@ -444,78 +382,9 @@ function openDevices() {
     box-shadow: 0 18px 40px rgba(2, 6, 23, 0.45);
 }
 
-.steps {
-    background: rgba(15, 23, 42, 0.7);
-    border-radius: 20px;
-    padding: 24px;
-    border: 1px solid rgba(148, 163, 184, 0.12);
-}
-
-.steps-header p {
-    margin: 0 0 16px;
-    color: #cbd5f5;
-}
-
-.steps ol {
-    list-style: none;
-    padding: 0;
-    margin: 0;
+.login-cta {
     display: flex;
-    flex-direction: column;
-    gap: 18px;
-}
-
-.steps li {
-    display: flex;
-    gap: 16px;
-    align-items: flex-start;
-}
-
-.step-label {
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    background: rgba(99, 102, 241, 0.4);
-    display: inline-flex;
-    align-items: center;
     justify-content: center;
-    font-weight: 600;
-}
-
-.steps h3 {
-    margin: 0 0 4px;
-}
-
-.steps p {
-    margin: 0;
-    color: #cbd5f5;
-}
-
-.cta-panel {
-    background: linear-gradient(120deg, rgba(15, 118, 110, 0.9), rgba(6, 78, 59, 0.9));
-    border-radius: 24px;
-    padding: 28px;
-    display: flex;
-    flex-direction: column;
-    gap: 18px;
-}
-
-.cta-panel-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-}
-
-@media (min-width: 720px) {
-    .cta-panel {
-        flex-direction: row;
-        justify-content: space-between;
-        align-items: center;
-    }
-
-    .cta-panel-actions {
-        justify-content: flex-end;
-    }
 }
 
 .landing-consent-overlay {

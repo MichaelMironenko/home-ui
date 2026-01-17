@@ -117,13 +117,20 @@ function endDrag(event) {
   dragElement.value = null
 }
 
-const panelStyle = computed(() => ({
-  zIndex: props.zIndex,
-  '--bottom-sheet-max-width': props.maxWidth,
-  '--bottom-sheet-max-height': props.maxHeight,
-  '--bottom-sheet-current-translate': `${Math.max(0, translate.value)}px`,
-  transform: `translateY(${Math.max(0, translate.value)}px)`
-}))
+const panelStyle = computed(() => {
+  const rawMaxHeight = String(props.maxHeight || '').trim()
+  const dynamicMaxHeight = rawMaxHeight.endsWith('vh')
+    ? `${rawMaxHeight.slice(0, -2)}dvh`
+    : rawMaxHeight
+  return {
+    zIndex: props.zIndex,
+    '--bottom-sheet-max-width': props.maxWidth,
+    '--bottom-sheet-max-height': rawMaxHeight,
+    '--bottom-sheet-max-height-dynamic': dynamicMaxHeight,
+    '--bottom-sheet-current-translate': `${Math.max(0, translate.value)}px`,
+    transform: `translateY(${Math.max(0, translate.value)}px)`
+  }
+})
 </script>
 
 <template>
@@ -181,6 +188,12 @@ const panelStyle = computed(() => ({
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+}
+
+@supports (height: 100dvh) {
+  .bottom-sheet-panel {
+    max-height: var(--bottom-sheet-max-height-dynamic, var(--bottom-sheet-max-height));
+  }
 }
 
 .bottom-sheet-panel.closing {
