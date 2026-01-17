@@ -1,5 +1,5 @@
 <svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
-<mask id="path-1-inside-1_1013_136" fill="white">
+<mask id="path-1-inside-1_1013_136" fill="white" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
 <path d="M462 256.5C462 370.547 369.547 463 255.5 463C141.453 463 49 370.547 49 256.5C49 142.453 141.453 50 255.5 50C369.547 50 462 142.453 462 256.5Z"/>
 </mask>
 <g filter="url(#filter0_i_1013_136)">

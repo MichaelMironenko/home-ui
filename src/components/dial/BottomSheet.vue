@@ -179,6 +179,8 @@ const panelStyle = computed(() => ({
   animation: bottom-sheet-slide-in 0.3s ease-out forwards;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .bottom-sheet-panel.closing {
@@ -258,5 +260,6 @@ const panelStyle = computed(() => ({
   overscroll-behavior: contain;
   touch-action: pan-y;
   flex: 1;
+  min-height: 0;
 }
 </style>
