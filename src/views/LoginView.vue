@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watchEffect } from 'vue'
+import { computed, watchEffect } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 import { setDocumentDescription, setDocumentTitle } from '../utils/pageTitle'
@@ -34,20 +34,10 @@ const errorMessage = computed(() => {
     return 'Не удалось выполнить вход. Попробуйте снова.'
 })
 
-const showConsentOverlay = ref(false)
-
 function startLogin() {
-    showConsentOverlay.value = true
-}
-
-function cancelConsent() {
-    showConsentOverlay.value = false
-}
-
-function confirmConsent() {
-    showConsentOverlay.value = false
     auth.login(redirectUrl.value)
 }
+
 </script>
 
 <template>
@@ -69,36 +59,15 @@ function confirmConsent() {
             </button>
             <p class="policy-link">
                 Продолжая, вы подтверждаете, что ознакомились с
+                <RouterLink :to="{ name: 'agreement' }" target="_blank" rel="noopener noreferrer">
+                    Пользовательским соглашением
+                </RouterLink>
+                и
                 <RouterLink :to="{ name: 'consent' }" target="_blank" rel="noopener noreferrer">
-                    Согласием на обработку персональных данных
+                    Политикой обработки персональных данных
                 </RouterLink>.
             </p>
         </section>
-
-        <transition name="fade">
-            <div v-if="showConsentOverlay" class="consent-overlay" role="dialog" aria-modal="true">
-                <div class="consent-backdrop" @click="cancelConsent"></div>
-                <section class="consent-panel">
-                    <button class="close-btn" type="button" @click="cancelConsent" aria-label="Закрыть">×</button>
-                    <h2>Вход</h2>
-                    <p class="consent-text">
-                        Нажимая кнопку, вы соглашаетесь с:
-                    </p>
-                    <ul>
-                        <li>☑ Пользовательским соглашением</li>
-                        <li>
-                            ☑
-                            <RouterLink :to="{ name: 'consent' }" @click="cancelConsent">
-                                Политикой обработки персональных данных
-                            </RouterLink>
-                        </li>
-                    </ul>
-                    <button class="login-btn filled" type="button" @click="confirmConsent">
-                        Войти через Яндекс ID
-                    </button>
-                </section>
-            </div>
-        </transition>
     </main>
 </template>
 
@@ -178,110 +147,5 @@ h1 {
 .policy-link a {
     color: #facc15;
     text-decoration: none;
-}
-
-.consent-overlay {
-    position: fixed;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 20;
-}
-
-.consent-backdrop {
-    position: absolute;
-    inset: 0;
-    background: rgba(15, 23, 42, 0.85);
-}
-
-.consent-panel {
-    position: relative;
-    background: var(--surface-card);
-    border-radius: 18px;
-    padding: 32px;
-    width: min(420px, calc(100% - 48px));
-    box-shadow: 0 25px 60px rgba(2, 6, 23, 0.4);
-    border: 1px solid var(--surface-border);
-    color: var(--text-primary);
-    z-index: 1;
-    text-align: center;
-}
-
-.consent-panel h2 {
-    margin-top: 0;
-    margin-bottom: 12px;
-    font-size: 22px;
-    color: #fafafa;
-}
-
-.consent-text {
-    margin: 0 0 12px;
-    font-size: 14px;
-    color: var(--text-muted);
-}
-
-.consent-panel ul {
-    list-style: none;
-    padding: 0;
-    margin: 0 0 20px;
-    text-align: left;
-    color: #f8fafc;
-    line-height: 1.7;
-}
-
-.consent-panel li {
-    margin-bottom: 6px;
-}
-
-.consent-panel li a {
-    color: #fbbf24;
-}
-
-.consent-panel .login-btn {
-    margin-bottom: 8px;
-}
-
-.consent-panel .login-btn.filled {
-    background: linear-gradient(120deg, #facc15, #f97316);
-    color: #0f172a;
-}
-
-.cancel-btn {
-    width: 100%;
-    border: 1px solid rgba(148, 163, 184, 0.5);
-    border-radius: 12px;
-    padding: 12px 18px;
-    font-size: 14px;
-    font-weight: 600;
-    background: transparent;
-    color: #94a3b8;
-    cursor: pointer;
-}
-
-.cancel-btn:hover {
-    border-color: rgba(248, 113, 113, 0.6);
-    color: #fecaca;
-}
-
-.close-btn {
-    position: absolute;
-    top: 10px;
-    right: 14px;
-    background: transparent;
-    border: none;
-    font-size: 20px;
-    color: #94a3b8;
-    cursor: pointer;
-}
-
-.fade-enter-active,
-.fade-leave-active {
-    transition: opacity 0.2s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-    opacity: 0;
 }
 </style>

@@ -65,17 +65,24 @@ watch(
 
 function commitStop(patch) {
     stopDraft.value = { ...stopDraft.value, ...patch }
-    emit('update:stop', stopDraft.value)
 }
 
 function commitAutoBrightness(patch) {
     autoDraft.value = { ...autoDraft.value, ...patch }
-    emit('update:autoBrightness', autoDraft.value)
 }
 
 const openRef = toRef(props, 'open')
 const sensorOptionsRef = toRef(props, 'sensorOptions')
 const timeRef = toRef(props, 'time')
+
+watch(
+    () => props.open,
+    (value) => {
+        if (!value) return
+        stopDraft.value = cloneValue(props.stop)
+        autoDraft.value = cloneValue(props.autoBrightness)
+    }
+)
 
 function formatClockValue(value) {
     return String(value).padStart(2, '0')
@@ -120,10 +127,19 @@ const {
 function setSunOffsetValue(value) {
     setSunOffset(activeSunAnchor.value, value)
 }
+
+function applyChanges() {
+    emit('update:stop', stopDraft.value)
+    emit('update:autoBrightness', autoDraft.value)
+    emit('close')
+}
 </script>
 
 <template>
-    <BottomSheet :open="open" :title="sheetTitle" max-height="90vh" @close="emit('close')">
+    <BottomSheet :open="open" :title="sheetTitle" max-height="95vh" @close="emit('close')">
+        <template #actions>
+            <button type="button" class="stop-state-apply" @click="applyChanges">ок</button>
+        </template>
         <div class="stop-editor">
             <section class="control-block time-section">
 
@@ -177,6 +193,22 @@ function setSunOffsetValue(value) {
     display: flex;
     flex-direction: column;
     gap: 16px;
+}
+
+.stop-state-apply {
+    border: none;
+    background: transparent;
+    color: var(--primary);
+    font-size: 1.5rem;
+    font-weight: 600;
+
+    border-radius: 10px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.stop-state-apply:active {
+    background: rgba(168, 85, 247, 0.16);
 }
 
 :deep(.control-block) {

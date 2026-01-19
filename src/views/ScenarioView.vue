@@ -436,14 +436,26 @@ async function toggleScenarioPower() {
     const prevDisabled = scenario.disabled === true
     const nextDisabled = !prevDisabled
     const prevBaseline = baselineComparable.value
+    const prevStatusSummary = scenarioStatusSummary.value
     scenario.disabled = nextDisabled
     scenarioStatus.value = nextDisabled ? 'off' : 'running'
     setBaselineDisabled(nextDisabled)
+    if (!nextDisabled) {
+        applyOptimisticRunningSummary()
+    } else {
+        scenarioStatusSummary.value = null
+        clearOptimisticRun()
+    }
     try {
         const payload = baselineComparable.value ? JSON.parse(baselineComparable.value) : getScenarioPayload()
         payload.disabled = nextDisabled
         await scenarioRequest('/scenario/save', { method: 'POST', body: { scenario: payload } })
+        if (!nextDisabled) {
+            await refreshScenarioStatus()
+        }
     } catch (err) {
+        scenarioStatusSummary.value = prevStatusSummary
+        clearOptimisticRun()
         scenario.disabled = prevDisabled
         scenarioStatus.value = prevDisabled ? 'off' : 'running'
         baselineComparable.value = prevBaseline
@@ -451,6 +463,43 @@ async function toggleScenarioPower() {
     } finally {
         powerToggling.value = false
     }
+}
+
+const optimisticRunUntil = ref(0)
+let optimisticRunTimer = null
+
+function startOptimisticRun() {
+    if (optimisticRunTimer) {
+        clearTimeout(optimisticRunTimer)
+    }
+    optimisticRunUntil.value = Date.now() + 3000
+    optimisticRunTimer = setTimeout(() => {
+        optimisticRunUntil.value = 0
+        optimisticRunTimer = null
+    }, 3000)
+}
+
+function clearOptimisticRun() {
+    if (optimisticRunTimer) {
+        clearTimeout(optimisticRunTimer)
+        optimisticRunTimer = null
+    }
+    optimisticRunUntil.value = 0
+}
+
+function applyOptimisticRunningSummary() {
+    const now = Date.now()
+    scenarioStatusSummary.value = {
+        result: {
+            active: true,
+            currentWindow: {
+                start: now - 1000,
+                end: now + 60 * 1000
+            },
+            actionsSent: 1
+        }
+    }
+    startOptimisticRun()
 }
 
 const timeTicker = ref(Date.now())
@@ -462,6 +511,9 @@ const currentWorldMinute = computed(() => {
 })
 
 const scenarioRuntimeStatus = computed(() => {
+    if (optimisticRunUntil.value && Date.now() <= optimisticRunUntil.value) {
+        return { kind: 'running', label: 'Работает' }
+    }
     const derived = deriveScenarioListStatus(
         {
             pause: scenarioPauseInfo.value,
@@ -820,6 +872,20 @@ async function loadScenarioById(id) {
     }
 }
 
+async function refreshScenarioStatus() {
+    if (!scenarioApiReady.value) return
+    const scenarioId = scenario.id ? String(scenario.id) : ''
+    if (!scenarioId) return
+    try {
+        const query = new URLSearchParams({ id: scenarioId })
+        const response = await scenarioRequest(`/scenario?${query.toString()}`)
+        if (response?.notModified) return
+        applyScenarioResponse(response, { skipScenario: true, skipCache: true })
+    } catch (err) {
+        console.warn('Failed to refresh scenario status', err)
+    }
+}
+
 async function saveScenario() {
     scenarioSaving.value = true
     scenarioError.value = ''
@@ -843,6 +909,13 @@ async function saveScenario() {
         showSaveToast('Сценарий сохранён')
         editingName.value = false
         markBaseline()
+        if (!scenario.disabled) {
+            applyOptimisticRunningSummary()
+            await refreshScenarioStatus()
+        } else {
+            scenarioStatusSummary.value = null
+            clearOptimisticRun()
+        }
         const savedId = response?.scenario?.id || scenario.id
         if (savedId && (isCreateMode.value || routeScenarioId.value !== savedId)) {
             router.replace({ name: 'scenario-edit', params: { id: savedId } })
@@ -930,6 +1003,7 @@ onUnmounted(() => {
         clearTimeout(saveToastTimer)
         saveToastTimer = null
     }
+    clearOptimisticRun()
 })
 
 const roomsById = computed(() => {

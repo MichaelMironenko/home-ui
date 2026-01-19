@@ -24,9 +24,13 @@ const isScenariosRoute = computed(() => {
     )
 })
 
+function startLogin() {
+    router.push({ name: 'login', query: { redirect: '/scenarios' } })
+}
+
 async function logout() {
     await auth.logout()
-    router.push({ name: 'login', query: { redirect: route.fullPath || '/' } })
+    router.push({ name: 'landing' })
 }
 </script>
 
@@ -36,11 +40,12 @@ async function logout() {
             <RouterLink to="/" class="brand" aria-label="Перейти на главную">
                 <img :src="logoWithText" alt="Extrahub" />
             </RouterLink>
-            <nav>
+            <nav v-if="currentUser">
                 <RouterLink to="/scenarios" class="nav-link" active-class="active">Сценарии</RouterLink>
                 <RouterLink to="/devices" class="nav-link" exact-active-class="active">Устройства</RouterLink>
                 <RouterLink to="/events" class="nav-link" active-class="active">История</RouterLink>
             </nav>
+            <button v-else type="button" class="header-login-btn" @click="startLogin">Войти</button>
             <RouterLink v-if="currentUser" :to="{ name: 'profile' }" class="profile-badge"
                 :title="currentUser.email || 'Профиль'">
                 {{ profileInitial }}
@@ -63,7 +68,7 @@ async function logout() {
             </div>
         </footer>
 
-        <footer v-if="!isLoginRoute" class="mobile-tabbar" role="navigation" aria-label="Главные разделы">
+        <footer v-if="!isLoginRoute && currentUser" class="mobile-tabbar" role="navigation" aria-label="Главные разделы">
             <RouterLink :to="{ name: 'scenarios-list' }" class="tab-link" :class="{ active: isScenariosRoute }">
                 <span class="icon">
                     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -168,6 +173,22 @@ nav {
 
 .nav-link.active {
     color: var(--primary);
+}
+
+.header-login-btn {
+    border: none;
+    border-radius: 999px;
+    padding: 8px 16px;
+    background: var(--primary);
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity var(--transition-base), transform var(--transition-base);
+}
+
+.header-login-btn:hover {
+    opacity: 0.88;
+    transform: translateY(-1px);
 }
 
 .user-section {

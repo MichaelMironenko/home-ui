@@ -393,7 +393,7 @@ async function handleLogout() {
     logoutRunning.value = true
     try {
         await auth.logout()
-        router.replace({ name: 'login' })
+        router.replace({ name: 'landing' })
     } finally {
         logoutRunning.value = false
     }
@@ -407,7 +407,7 @@ async function handleDeleteProfile() {
     try {
         await profileStore.deleteProfile()
         await auth.logout()
-        router.replace({ name: 'login' })
+        router.replace({ name: 'landing' })
     } catch (err) {
         statusMessage.value = err?.message || 'Не удалось удалить профиль'
         console.warn('[profile] deleteProfile failed', err)
