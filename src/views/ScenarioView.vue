@@ -14,13 +14,13 @@ import {
 } from '../utils/deviceCapabilities'
 import { lockColorUsage, lockColorMode, lockBrightnessUsage } from '../utils/stopStateRules'
 import ScenarioDialCircle from '../components/dial/ScenarioDialCircle.vue'
-import BottomSheet from '../components/dial/BottomSheet.vue'
 import TargetDevicesCard from '../components/dial/TargetDevicesCard.vue'
 import StopPreviewList from '../components/dial/StopPreviewList.vue'
 import RunScheduleCard from '../components/dial/RunScheduleCard.vue'
 import ScenarioActionsFooter from '../components/dial/ScenarioActionsFooter.vue'
 import DeviceSelectorSheet from '../components/dial/DeviceSelectorSheet.vue'
 import StopStateSheet from '../components/dial/StopStateSheet.vue'
+import ScenarioSheet from '../components/dial/ScenarioSheet.vue'
 import SegmentedControl from '../components/dial/SegmentedControl.vue'
 import { useScenarioApi } from '../composables/useScenarioApi'
 import { useProfile } from '../composables/useProfile'
@@ -166,16 +166,34 @@ const schedulePresenceSummary = computed(() => {
 
 const scheduleSummary = computed(() => `${scheduleDaysSummary.value} · ${schedulePresenceSummary.value}`)
 
-function toggleDay(value) {
-    const current = new Set(selectedDays.value)
-    if (current.has(value)) current.delete(value)
-    else current.add(value)
-    if (!current.size) current.add(value)
-    const nextDays = Array.from(current).sort((a, b) => a - b)
+const scheduleDraftDays = ref(new Set(selectedDays.value))
+const scheduleDraftPresence = ref(presenceMode.value)
+
+function resetScheduleDrafts() {
+    scheduleDraftDays.value = new Set(selectedDays.value)
+    scheduleDraftPresence.value = presenceMode.value
+}
+
+function toggleScheduleDraftDay(value) {
+    const nextDays = new Set(scheduleDraftDays.value)
+    if (nextDays.has(value)) nextDays.delete(value)
+    else nextDays.add(value)
+    if (!nextDays.size) nextDays.add(value)
+    scheduleDraftDays.value = nextDays
+}
+
+function setScheduleDraftPresence(value) {
+    scheduleDraftPresence.value = value
+}
+
+function applyScheduleChanges() {
+    const sortedDays = Array.from(scheduleDraftDays.value).sort((a, b) => a - b)
     scenario.time = {
         ...(scenario.time || {}),
-        days: nextDays
+        days: sortedDays
     }
+    presenceMode.value = scheduleDraftPresence.value
+    closeModal()
 }
 
 const colorPalette = ['#ffd89c', '#ffb4a2', '#f472b6', '#c084fc', '#60a5fa', '#34d399', '#fef08a', '#f97316']
@@ -360,11 +378,25 @@ function syncSelectedDevicesFromSources(force = false) {
     }
 }
 
+function getSelectionRefs() {
+    if (isDeviceSheetActive.value) {
+        return {
+            groupsRef: deviceSelectionDraftGroups,
+            devicesRef: deviceSelectionDraftDevices
+        }
+    }
+    return {
+        groupsRef: selectedGroupIds,
+        devicesRef: selectedDevicesIds
+    }
+}
+
 function handleGroupToggle(group, checked) {
     const groupId = typeof group === 'object' ? group.id : group
     if (!groupId) return
-    const groupSet = new Set(selectedGroupIds.value)
-    const deviceSet = new Set(selectedDevicesIds.value)
+    const { groupsRef, devicesRef } = getSelectionRefs()
+    const groupSet = new Set(groupsRef.value)
+    const deviceSet = new Set(devicesRef.value)
     const members = groupMembers.value.get(groupId) || []
     if (checked) {
         groupSet.add(groupId)
@@ -373,28 +405,48 @@ function handleGroupToggle(group, checked) {
         groupSet.delete(groupId)
         members.forEach((memberId) => deviceSet.delete(memberId))
     }
-    selectedGroupIds.value = groupSet
-    selectedDevicesIds.value = deviceSet
-    sanitizeSelectionSets()
-    selectionDirty.value = true
+    groupsRef.value = groupSet
+    devicesRef.value = deviceSet
+    if (!isDeviceSheetActive.value) {
+        sanitizeSelectionSets()
+        selectionDirty.value = true
+    }
 }
 
 function handleDeviceToggle(payload, checked) {
     const device = payload?.device
     if (!device?.id) return
-    const deviceSet = new Set(selectedDevicesIds.value)
-    const groupSet = new Set(selectedGroupIds.value)
+    const { groupsRef, devicesRef } = getSelectionRefs()
+    const deviceSet = new Set(devicesRef.value)
+    const groupSet = new Set(groupsRef.value)
     if (checked) deviceSet.add(device.id)
     else deviceSet.delete(device.id)
     if (payload.group?.id) {
         const members = groupMembers.value.get(payload.group.id) || []
-        const allSelected = members.every((memberId) => memberId === device.id ? checked : deviceSet.has(memberId))
+        const allSelected = members.every((memberId) => (memberId === device.id ? checked : deviceSet.has(memberId)))
         if (allSelected) groupSet.add(payload.group.id)
         else groupSet.delete(payload.group.id)
     }
-    selectedDevicesIds.value = deviceSet
-    selectedGroupIds.value = groupSet
-    selectionDirty.value = true
+    devicesRef.value = deviceSet
+    groupsRef.value = groupSet
+    if (!isDeviceSheetActive.value) {
+        selectionDirty.value = true
+    }
+}
+
+function applyDeviceSelectionChanges() {
+    if (activeModal.value !== 'devices') return
+    const nextGroups = new Set(deviceSelectionDraftGroups.value)
+    const nextDevices = new Set(deviceSelectionDraftDevices.value)
+    const groupsChanged = !setsEqual(nextGroups, selectedGroupIds.value)
+    const devicesChanged = !setsEqual(nextDevices, selectedDevicesIds.value)
+    selectedGroupIds.value = nextGroups
+    selectedDevicesIds.value = nextDevices
+    sanitizeSelectionSets()
+    if ((groupsChanged || devicesChanged) && !selectionDirty.value) {
+        selectionDirty.value = true
+    }
+    closeModal()
 }
 
 watch(
@@ -1147,7 +1199,16 @@ const deviceSections = computed(() => {
     return list
 })
 
+const deviceSelectionDraftGroups = ref(new Set())
+const deviceSelectionDraftDevices = ref(new Set())
+const activeModal = ref(null)
+const isDeviceSheetActive = computed(() => activeModal.value === 'devices')
+const deviceSelectionForSheet = computed(() => ({
+    groups: isDeviceSheetActive.value ? deviceSelectionDraftGroups.value : selectedGroupIds.value,
+    devices: isDeviceSheetActive.value ? deviceSelectionDraftDevices.value : selectedDevicesIds.value
+}))
 const prioritizedDeviceSections = computed(() => {
+    const selection = deviceSelectionForSheet.value
     const cloned = deviceSections.value.map((section) => ({
         ...section,
         groups: section.groups.map((group) => ({ ...group })),
@@ -1155,19 +1216,19 @@ const prioritizedDeviceSections = computed(() => {
     }))
 
     const hasSelection = (section) =>
-        section.groups.some((group) => selectedGroupIds.value.has(group.id)) ||
-        section.devices.some((device) => selectedDevicesIds.value.has(device.id))
+        section.groups.some((group) => selection.groups.has(group.id)) ||
+        section.devices.some((device) => selection.devices.has(device.id))
 
     cloned.forEach((section) => {
         section.groups.sort((a, b) => {
-            const aPriority = selectedGroupIds.value.has(a.id) ? 0 : 1
-            const bPriority = selectedGroupIds.value.has(b.id) ? 0 : 1
+            const aPriority = selection.groups.has(a.id) ? 0 : 1
+            const bPriority = selection.groups.has(b.id) ? 0 : 1
             if (aPriority !== bPriority) return aPriority - bPriority
             return (a.name || '').localeCompare(b.name || '', 'ru')
         })
         section.devices.sort((a, b) => {
-            const aPriority = selectedDevicesIds.value.has(a.id) ? 0 : 1
-            const bPriority = selectedDevicesIds.value.has(b.id) ? 0 : 1
+            const aPriority = selection.devices.has(a.id) ? 0 : 1
+            const bPriority = selection.devices.has(b.id) ? 0 : 1
             if (aPriority !== bPriority) return aPriority - bPriority
             return (a.name || '').localeCompare(b.name || '', 'ru')
         })
@@ -1184,17 +1245,20 @@ const prioritizedDeviceSections = computed(() => {
 })
 
 const deviceSheetSections = ref(prioritizedDeviceSections.value)
-
-const activeModal = ref(null)
 const prioritizeSelectionOnNextOpen = ref(true)
 watch(
     () => activeModal.value,
     (next, prev) => {
         if (next === 'devices') {
+            deviceSelectionDraftGroups.value = new Set(selectedGroupIds.value)
+            deviceSelectionDraftDevices.value = new Set(selectedDevicesIds.value)
             deviceSheetSections.value = prioritizeSelectionOnNextOpen.value
                 ? prioritizedDeviceSections.value
                 : deviceSections.value
             prioritizeSelectionOnNextOpen.value = false
+        }
+        if (next === 'schedule') {
+            resetScheduleDrafts()
         }
         if (prev === 'devices') {
             prioritizeSelectionOnNextOpen.value = true
@@ -1202,6 +1266,10 @@ watch(
     }
 )
 const modalPayload = ref(null)
+const stopStateSheetRef = ref(null)
+const stopStateSheetTitle = computed(() =>
+    modalPayload.value === 'end' ? 'Конец сценария' : 'Начало сценария'
+)
 
 function openModal(type, payload = null) {
     activeModal.value = type
@@ -1218,6 +1286,11 @@ const currentStopForModal = computed(() => {
     if (modalPayload.value === 'end') return endStop
     return null
 })
+
+function handleStopStateApply() {
+    stopStateSheetRef.value?.applyChanges()
+    closeModal()
+}
 
 const SENSOR_MAX_LIMIT = 100000
 
@@ -1430,23 +1503,30 @@ function handleResumeFromDial() {
                 </div>
             </div>
 
-            <StopStateSheet :open="activeModal === 'state'" v-if="currentStopForModal" :stop="currentStopForModal"
-                :palette="colorPalette" :time="scenario.time" :context="modalPayload === 'start' ? 'start' : 'end'"
-                :auto-brightness="autoBrightness" :sensor-options="sensorOptions" @close="closeModal"
-                @update:stop="handleStopModalUpdate" @update:autoBrightness="handleAutoBrightnessUpdate" />
+            <ScenarioSheet :open="activeModal === 'state'" v-if="currentStopForModal"
+                :title="stopStateSheetTitle" @close="closeModal" @apply="handleStopStateApply">
+                <StopStateSheet ref="stopStateSheetRef" :open="activeModal === 'state'" :stop="currentStopForModal"
+                    :palette="colorPalette" :time="scenario.time"
+                    :context="modalPayload === 'start' ? 'start' : 'end'"
+                    :auto-brightness="autoBrightness" :sensor-options="sensorOptions"
+                    @update:stop="handleStopModalUpdate" @update:autoBrightness="handleAutoBrightnessUpdate" />
+            </ScenarioSheet>
 
-            <BottomSheet :open="activeModal === 'devices'" title="Выбор устройств" @close="closeModal">
-                <DeviceSelectorSheet :sections="deviceSheetSections" :selected-ids="selectedDevicesIds"
-                    :selected-groups="selectedGroupIds" @toggle-group="handleGroupToggle"
+            <ScenarioSheet :open="activeModal === 'devices'" title="Выбор устройств" @close="closeModal"
+                @apply="applyDeviceSelectionChanges">
+                <DeviceSelectorSheet :sections="deviceSheetSections" :selected-ids="deviceSelectionForSheet.devices"
+                    :selected-groups="deviceSelectionForSheet.groups" @toggle-group="handleGroupToggle"
                     @toggle-device="handleDeviceToggle" />
-            </BottomSheet>
+            </ScenarioSheet>
 
-            <BottomSheet :open="activeModal === 'schedule'" title="Запускать" @close="closeModal">
+            <ScenarioSheet :open="activeModal === 'schedule'" title="Запускать" @close="closeModal"
+                @apply="applyScheduleChanges">
                 <div class="weekday-picker">
                     <p>Дни запуска</p>
                     <div class="weekday-grid">
                         <button v-for="day in weekdayOptions" :key="day.value" type="button" class="weekday-btn"
-                            :class="{ active: selectedDays.includes(day.value) }" @click="toggleDay(day.value)">
+                            :class="{ active: scheduleDraftDays.has(day.value) }"
+                            @click="toggleScheduleDraftDay(day.value)">
                             {{ day.label }}
                         </button>
                     </div>
@@ -1455,11 +1535,11 @@ function handleResumeFromDial() {
                     <div class="presence-inline-header">
                         <span>Когда запускать</span>
                     </div>
-                    <SegmentedControl aria-label="Режим присутствия" dense :model-value="presenceMode"
+                    <SegmentedControl aria-label="Режим присутствия" dense :model-value="scheduleDraftPresence"
                         :options="presenceOptions.map((option) => ({ value: option.id, label: option.label, disabled: option.disabled, warning: option.warning, tooltip: option.tooltip }))"
-                        @update:model-value="presenceMode = $event" />
+                        @update:model-value="setScheduleDraftPresence" />
                 </div>
-            </BottomSheet>
+            </ScenarioSheet>
 
             <div v-if="saveToastMessage" :key="saveToastId" class="save-toast" role="status" aria-live="polite">
                 {{ saveToastMessage }}

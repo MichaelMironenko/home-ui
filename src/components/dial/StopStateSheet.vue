@@ -2,7 +2,6 @@
 import { computed, ref, toRaw, toRef, watch } from 'vue'
 
 import { useStopTimeEditor } from '../../composables/useStopTimeEditor'
-import BottomSheet from './BottomSheet.vue'
 import SegmentedControl from './SegmentedControl.vue'
 import StopBrightnessEditor from './StopBrightnessEditor.vue'
 import StopColorEditor from './StopColorEditor.vue'
@@ -39,7 +38,7 @@ const props = defineProps({
     }
 })
 
-const emit = defineEmits(['close', 'update:stop', 'update:autoBrightness'])
+const emit = defineEmits(['update:stop', 'update:autoBrightness'])
 
 function cloneValue(value) {
     return value ? structuredClone(toRaw(value)) : {}
@@ -106,7 +105,6 @@ function formatSunValue(value) {
 }
 
 const isStartContext = computed(() => props.context !== 'end')
-const sheetTitle = computed(() => (props.context === 'end' ? 'Конец сценария' : 'Начало сценария'))
 
 const {
     timeMode,
@@ -131,17 +129,16 @@ function setSunOffsetValue(value) {
 function applyChanges() {
     emit('update:stop', stopDraft.value)
     emit('update:autoBrightness', autoDraft.value)
-    emit('close')
 }
+
+defineExpose({
+    applyChanges
+})
 </script>
 
 <template>
-    <BottomSheet :open="open" :title="sheetTitle" max-height="95vh" @close="emit('close')">
-        <template #actions>
-            <button type="button" class="stop-state-apply" @click="applyChanges">ок</button>
-        </template>
-        <div class="stop-editor">
-            <section class="control-block time-section">
+    <div class="stop-editor">
+        <section class="control-block time-section">
 
 
                 <SegmentedControl aria-label="Выбор режима времени" :model-value="timeMode"
@@ -181,11 +178,10 @@ function applyChanges() {
             <StopBrightnessEditor :stop="stopDraft" :auto-brightness="autoDraft" :sensor-options="sensorOptions"
                 :is-start-context="isStartContext" :open="open" @update:stop="commitStop"
                 @update:autoBrightness="commitAutoBrightness" />
-            <p v-if="!isStartContext" class="mode-note">
-                Выбрать другой режим изменения цвета и яркости можно в настройках стартового состояния.
-            </p>
-        </div>
-    </BottomSheet>
+        <p v-if="!isStartContext" class="mode-note">
+            Выбрать другой режим изменения цвета и яркости можно в настройках стартового состояния.
+        </p>
+    </div>
 </template>
 
 <style scoped>
@@ -193,22 +189,6 @@ function applyChanges() {
     display: flex;
     flex-direction: column;
     gap: 16px;
-}
-
-.stop-state-apply {
-    border: none;
-    background: transparent;
-    color: var(--primary);
-    font-size: 1.5rem;
-    font-weight: 600;
-
-    border-radius: 10px;
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-}
-
-.stop-state-apply:active {
-    background: rgba(168, 85, 247, 0.16);
 }
 
 :deep(.control-block) {

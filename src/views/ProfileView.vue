@@ -495,10 +495,10 @@ async function handleDeleteProfile() {
                         <div class="presence-step-body">
                             <button type="button" class="apply-btn small" @click="handleIssuePresenceToken"
                                 :disabled="issuingPresenceToken">
-                                {{ issuingPresenceToken ? 'Генерируем…' : (presenceApiTokenCreatedAt ? 'Сбросить токен' : 'Сгенерировать токен') }}
+                                {{ issuingPresenceToken ? 'Генерируем…' : (presenceApiTokenCreatedAt ? 'Получить новый токен' : 'Сгенерировать токен') }}
                             </button>
                             <p v-if="presenceApiTokenCreatedAt" class="muted small">
-                                Токен уже сгенерирован. Чтобы увидеть новый токен, нажмите «Сбросить токен».
+                                Токен уже сгенерирован. Чтобы увидеть новый токен, нажмите «Получить новый токен».
                             </p>
                             <p v-if="issuedPresenceToken" class="muted small">
                                 Новый токен (покажем один раз): <code class="token">{{ issuedPresenceToken }}</code>
