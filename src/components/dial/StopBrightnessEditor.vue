@@ -198,7 +198,7 @@ function handleSensorChange(event) {
                                 </svg>
                                 <div class="auto-scale">
                                     <div class="auto-scale-title">
-                                        <span>За окном</span>
+                                        <span>На датчике</span>
                                         <small>лк</small>
                                     </div>
                                     <div class="auto-scale-body">

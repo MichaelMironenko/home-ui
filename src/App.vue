@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from './composables/useAuth'
-import logoWithText from './assets/logo-with-text.svg'
+import logoWithText from './assets/logo-with-text.png'
 
 const route = useRoute()
 const router = useRouter()

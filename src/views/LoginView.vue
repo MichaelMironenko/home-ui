@@ -3,7 +3,7 @@ import { computed, watchEffect } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 import { setDocumentDescription, setDocumentTitle } from '../utils/pageTitle'
-import logoWithoutText from '../assets/logo.svg'
+import logoWithoutText from '../assets/logo.png'
 
 const route = useRoute()
 const auth = useAuth()
