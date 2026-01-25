@@ -13,6 +13,8 @@ const PAUSE_REASON_LABELS = {
 }
 
 const PAUSE_MANUAL_SOURCES = new Set(['manual', 'manual_pause'])
+const PAUSE_MANUAL_IDENTIFIERS = new Set(['manual', 'manual_pause', 'app_button_pause'])
+const PAUSE_AUTO_SOURCES = new Set(['autopause', 'presence', 'presence_guard', 'away', 'presence_away'])
 
 const CURRENT_WINDOW_KEYS = ['window', 'currentWindow', 'activeWindow']
 const NEXT_WINDOW_KEYS = ['nextWindow', 'upcomingWindow', 'next']
@@ -92,16 +94,26 @@ export function deriveScenarioListStatus(item, nowInput = Date.now()) {
     const now = typeof nowInput === 'number' ? nowInput : parseTimestamp(nowInput) || Date.now()
     if (!item) return buildStatus('waiting', 'Завершен')
     if (item.disabled) return buildStatus('off', 'Выключен')
-    const statusReason = item.status?.result?.reason || null
-    if (item.pause || statusReason === 'app_button_pause' || statusReason === 'autopause') {
+    const status = item.status
+    const result = status?.result
+    const statusReason = result?.reason || null
+    const pauseReason = item.pause?.reason
+    const reasonCandidate = pauseReason?.source || statusReason || ''
+    const reasonNormalized = String(reasonCandidate).toLowerCase()
+    const hasPausePayload =
+        Boolean(item.pause) || statusReason === 'app_button_pause' || statusReason === 'autopause'
+    const manualPause = PAUSE_MANUAL_IDENTIFIERS.has(reasonNormalized)
+    const activeWindow = resolveActiveWindow(result, now)
+    const hasActiveWindow = Boolean(activeWindow)
+    const hasWindowData = !!(result?.currentWindow || result?.nextWindow || result?.lastWindow)
+    const autoPause = PAUSE_AUTO_SOURCES.has(reasonNormalized)
+    const autopauseActive = autoPause && (hasWindowData ? hasActiveWindow : true)
+    const shouldShowPause = hasPausePayload && (manualPause || autopauseActive)
+    if (shouldShowPause) {
         const reason = resolvePauseReason(item.pause, item.status)
         const label = reason ? `Пауза · ${reason}` : 'Пауза'
         return buildStatus('paused', label)
     }
-    const status = item.status
-    const result = status?.result
-    const hasWindowData = !!(result?.currentWindow || result?.nextWindow || result?.lastWindow)
-    const activeWindow = resolveActiveWindow(result, now)
     const actionsSent = Number.isFinite(Number(result?.actionsSent)) ? Number(result.actionsSent) : 0
     const fallbackActive = !hasWindowData && actionsSent > 0
     if (activeWindow || (result?.active && (isWindowActive(result?.currentWindow, now) || fallbackActive))) {

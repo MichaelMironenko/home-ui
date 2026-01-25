@@ -406,9 +406,10 @@ export function useScenarioDialGeometry({ sortedScenarios, catalogGroups, nowTic
             group.scenarios.forEach((entry) => {
                 const conflicts = Array.isArray(entry.conflicts) ? entry.conflicts : []
                 conflicts.forEach((conflict) => {
+                    const conflictIndex = segments.length
                     segments.push({
                         ...conflict,
-                        key: `${entry.key}-${conflict.kind}-${conflict.path || conflict.radius || 0}`
+                        key: `${entry.key}-${conflict.kind}-${conflict.path || conflict.radius || 0}-${conflictIndex}`
                     })
                 })
             })

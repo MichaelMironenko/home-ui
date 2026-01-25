@@ -6,6 +6,12 @@ function clampNumber(value, min = 0, max = 1) {
     return numeric
 }
 
+function easeLowBrightness(value) {
+    const clamped = Math.max(0, Math.min(1, Number(value) || 0))
+    if (clamped === 0) return 0
+    return Math.max(Math.sqrt(clamped), 0.3)
+}
+
 export function rgbToHex(r, g, b) {
     const clampChannel = (value) => Math.max(0, Math.min(255, Number(value) || 0))
     return `#${[clampChannel(r), clampChannel(g), clampChannel(b)]
@@ -100,7 +106,8 @@ export function temperatureToHex(kelvin) {
 export function applyBrightnessHex(hex, brightness, enabled) {
     if (!enabled || !Number.isFinite(brightness) || brightness >= 100) return hex
     const normalized = Math.max(1, Math.min(100, brightness))
-    const factor = 0.5 + 0.5 * (normalized / 100)
+    const ratio = easeLowBrightness(normalized / 100)
+    const factor = 0.5 + 0.5 * ratio
     const { r, g, b } = hexToRgb(hex)
     return rgbToHex(Math.round(r * factor), Math.round(g * factor), Math.round(b * factor))
 }
@@ -122,7 +129,7 @@ export function stopColorHex(stop) {
         return applyBrightnessHex(baseHex, stop.brightness, stop.useBrightness)
     }
     if (stop.useBrightness) {
-        const ratio = clampNumber(stop.brightness, 0, 100) / 100
+        const ratio = easeLowBrightness(clampNumber(stop.brightness, 0, 100) / 100)
         return blendHex('#0f172a', '#f8fafc', ratio)
     }
     return '#b9c1cdff'

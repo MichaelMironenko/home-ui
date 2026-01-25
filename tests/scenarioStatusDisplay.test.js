@@ -50,6 +50,27 @@ describe('deriveScenarioListStatus', () => {
         expect(result.label).toBe('Пауза · Никого нет дома')
     })
 
+    it('ignores autopause reason outside the active window', () => {
+        const start = Date.UTC(2024, 0, 1, 10, 0)
+        const end = Date.UTC(2024, 0, 1, 11, 0)
+        const status = summarizeStatusRecord({
+            result: {
+                active: false,
+                reason: 'autopause',
+                currentWindow: {
+                    start: new Date(start).toISOString(),
+                    end: new Date(end).toISOString()
+                },
+                lastWindow: {
+                    end: new Date(end).toISOString()
+                }
+            }
+        })
+        const now = end + 15 * 60 * 1000
+        const result = deriveScenarioListStatus(baseItem({ status }), now)
+        expect(result.kind).toBe('waiting')
+    })
+
     it('returns off state when disabled', () => {
         const status = summarizeStatusRecord({ result: { active: false } })
         const result = deriveScenarioListStatus(
