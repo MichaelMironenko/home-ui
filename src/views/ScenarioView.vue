@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { getConfig } from '../lib/api'
 import { cacheScenarioUpdate, getCachedScenarioById } from '../lib/scenarioCache'
 import { computeEnvironment, createDefaultScenario, normalizeScenarioStruct } from '../utils/scenarioUtils'
-import { temperatureToHex } from '../utils/colorUtils'
+import { stopColorHex, temperatureToHex } from '../utils/colorUtils'
 import { normalizeEvents, normalizeScenarioName as normalizeEventScenarioName } from '../utils/events'
 import { trackFunctionCall } from '../lib/requestMetrics'
 import {
@@ -22,6 +22,7 @@ import DeviceSelectorSheet from '../components/dial/DeviceSelectorSheet.vue'
 import StopStateSheet from '../components/dial/StopStateSheet.vue'
 import ScenarioSheet from '../components/dial/ScenarioSheet.vue'
 import SegmentedControl from '../components/dial/SegmentedControl.vue'
+import ScenarioHistoryChart from '../components/scenarios/ScenarioHistoryChart.vue'
 import { useScenarioApi } from '../composables/useScenarioApi'
 import { useProfile } from '../composables/useProfile'
 import {
@@ -212,6 +213,8 @@ const endStop = createStopState({
     useBrightness: true,
     useColor: true
 })
+
+const historyDefaultColor = computed(() => stopColorHex(startStop))
 
 const AUTO_BRIGHTNESS_DEFAULTS = {
     enabled: false,
@@ -577,7 +580,9 @@ const events = ref([])
 const eventsError = ref('')
 const eventsLoading = ref(false)
 let eventsInterval = null
-const EVENT_POLL_INTERVAL_MS = 60 * 1000
+let catalogInterval = null
+const EVENT_POLL_INTERVAL_MS = 5 * 60 * 1000
+const CATALOG_POLL_INTERVAL_MS = 5 * 60 * 1000
 const catalogGroupSignature = computed(() =>
     (catalog.groups || [])
         .map((group) => {
@@ -703,17 +708,26 @@ function stopEventsPolling() {
     eventsInterval = null
 }
 
+function startCatalogPolling() {
+    if (catalogInterval) return
+    catalogInterval = setInterval(() => {
+        loadCatalog()
+    }, CATALOG_POLL_INTERVAL_MS)
+}
+
+function stopCatalogPolling() {
+    if (!catalogInterval) return
+    clearInterval(catalogInterval)
+    catalogInterval = null
+}
+
 const shouldPollEvents = computed(
     () => canControlRuntime.value && scenarioRuntimeStatus.value?.kind === 'running'
 )
 
-watch(shouldPollEvents, (enabled) => {
-    if (enabled) {
-        startEventsPolling()
-    } else {
-        stopEventsPolling()
-    }
-}, { immediate: true })
+const shouldPollCatalog = computed(
+    () => canControlRuntime.value && scenarioRuntimeStatus.value?.kind === 'running'
+)
 
 const latestScenarioEvent = computed(() => {
     const list = events.value || []
@@ -727,6 +741,19 @@ const latestScenarioEvent = computed(() => {
             return false
         }) || null
     )
+})
+
+const scenarioHistoryEvents = computed(() => {
+    const list = Array.isArray(events.value) ? events.value.slice() : []
+    if (!list.length) return []
+    const scenarioId = scenario.id ? String(scenario.id) : ''
+    const nameKey = normalizeEventScenarioName(scenario.name || '')
+    const matched = list.filter((event) => {
+        if (scenarioId && event.scenarioId === scenarioId) return true
+        if (nameKey && normalizeEventScenarioName(event.scenarioName) === nameKey) return true
+        return false
+    })
+    return matched.sort((a, b) => a.timestamp - b.timestamp)
 })
 
 const dialCurrentState = computed(() => {
@@ -996,14 +1023,12 @@ onUnmounted(() => {
         clearInterval(timeTickerInterval)
         timeTickerInterval = null
     }
-    if (eventsInterval) {
-        clearInterval(eventsInterval)
-        eventsInterval = null
-    }
     if (saveToastTimer) {
         clearTimeout(saveToastTimer)
         saveToastTimer = null
     }
+    stopEventsPolling()
+    stopCatalogPolling()
 })
 
 const roomsById = computed(() => {
@@ -1265,6 +1290,25 @@ watch(
         }
     }
 )
+const shouldPollCatalogActive = computed(
+    () => shouldPollCatalog.value && isDeviceSheetActive.value
+)
+
+watch(shouldPollEvents, (enabled) => {
+    if (enabled) {
+        startEventsPolling()
+    } else {
+        stopEventsPolling()
+    }
+}, { immediate: true })
+
+watch(shouldPollCatalogActive, (enabled) => {
+    if (enabled) {
+        startCatalogPolling()
+    } else {
+        stopCatalogPolling()
+    }
+}, { immediate: true })
 const modalPayload = ref(null)
 const stopStateSheetRef = ref(null)
 const stopStateSheetTitle = computed(() =>
@@ -1438,8 +1482,8 @@ function handleResumeFromDial() {
             <div class="title-row">
                 <div class="scenario-name-wrap">
                     <input v-if="editingName" ref="nameInputRef" v-model="scenarioNameValue" maxlength="30"
-                        class="scenario-name-input" type="text" placeholder="Название сценария" @blur="finishEditingName"
-                        @keyup.enter="finishEditingName" />
+                        class="scenario-name-input" type="text" placeholder="Название сценария"
+                        @blur="finishEditingName" @keyup.enter="finishEditingName" />
                     <button v-else :class="['scenario-name-display', { placeholder: !scenarioNameValue }]" type="button"
                         @click="editingName = true">
                         {{ scenarioNameUiLabel }}
@@ -1456,7 +1500,8 @@ function handleResumeFromDial() {
                         <span v-else>⏸</span>
                     </button>
                     <button type="button" class="status-icon-btn power" :disabled="powerToggling"
-                        :title="scenarioDisplayStatus === 'off' ? 'Включить' : 'Выключить'" @click="toggleScenarioPower">
+                        :title="scenarioDisplayStatus === 'off' ? 'Включить' : 'Выключить'"
+                        @click="toggleScenarioPower">
                         <span>{{ scenarioDisplayStatus === 'off' ? '⏻' : '⏼' }}</span>
                     </button>
                 </div>
@@ -1467,15 +1512,14 @@ function handleResumeFromDial() {
                     <div class="dial-card">
                         <ScenarioDialCircle :start-stop="startStop" :end-stop="endStop"
                             :auto-brightness="autoBrightnessActive" :current-status-label="scenarioStatusLabel"
-                            :scenario-status="scenarioDialStatus" :sunrise-minute="sunriseTime" :sunset-minute="sunsetTime"
-                            :dial-face-ratio="dialFaceRatio" :current-minute="currentWorldMinute"
-                            :scenario-segment-radius="130" :current-state="dialCurrentState"
-                            :overlaps="scenarioOverlaps" :overlap-names="overlapNameMap"
-                            :time-zone="scenario.time?.tz"
-                            @update:start-stop="handleStartStopUpdate"
-                            @update:end-stop="handleEndStopUpdate" @change="handleDialChange"
-                            @open-start-editor="openModal('state', 'start')" @open-end-editor="openModal('state', 'end')"
-                            @resume="handleResumeFromDial" />
+                            :scenario-status="scenarioDialStatus" :sunrise-minute="sunriseTime"
+                            :sunset-minute="sunsetTime" :dial-face-ratio="dialFaceRatio"
+                            :current-minute="currentWorldMinute" :scenario-segment-radius="130"
+                            :current-state="dialCurrentState" :overlaps="scenarioOverlaps"
+                            :overlap-names="overlapNameMap" :time-zone="scenario.time?.tz"
+                            @update:start-stop="handleStartStopUpdate" @update:end-stop="handleEndStopUpdate"
+                            @change="handleDialChange" @open-start-editor="openModal('state', 'start')"
+                            @open-end-editor="openModal('state', 'end')" @resume="handleResumeFromDial" />
                     </div>
                 </div>
                 <div class="settings-column">
@@ -1484,8 +1528,8 @@ function handleResumeFromDial() {
                             :auto-brightness-active="autoBrightnessActive" @open-start="openModal('state', 'start')"
                             @open-end="openModal('state', 'end')" />
 
-                        <TargetDevicesCard :loading="catalogLoading" :error="catalogError" :summary="selectedTargetsLabel"
-                            @open="openModal('devices')" />
+                        <TargetDevicesCard :loading="catalogLoading" :error="catalogError"
+                            :summary="selectedTargetsLabel" @open="openModal('devices')" />
 
                         <RunScheduleCard :summary="scheduleSummary" @open="openModal('schedule')" />
                     </section>
@@ -1498,16 +1542,23 @@ function handleResumeFromDial() {
                     </div>
 
                     <ScenarioActionsFooter v-if="hasUnsavedChanges || scenarioSaving" class="scenario-actions-footer"
-                        :create-mode="isCreateMode" :saving="scenarioSaving" :dirty="hasUnsavedChanges" @save="handleSave"
-                        @cancel="handleCancel" />
+                        :create-mode="isCreateMode" :saving="scenarioSaving" :dirty="hasUnsavedChanges"
+                        @save="handleSave" @cancel="handleCancel" />
                 </div>
             </div>
 
-            <ScenarioSheet :open="activeModal === 'state'" v-if="currentStopForModal"
-                :title="stopStateSheetTitle" @close="closeModal" @apply="handleStopStateApply">
+            <section class="scenario-history-section">
+                <ScenarioHistoryChart :events="scenarioHistoryEvents" :default-color="historyDefaultColor" />
+                <p v-if="eventsError" class="scenario-history-error">{{ eventsError }}</p>
+                <p v-else-if="eventsLoading && !scenarioHistoryEvents.length" class="scenario-history-loading">
+                    Загружаем историю событий…
+                </p>
+            </section>
+
+            <ScenarioSheet :open="activeModal === 'state'" v-if="currentStopForModal" :title="stopStateSheetTitle"
+                @close="closeModal" @apply="handleStopStateApply">
                 <StopStateSheet ref="stopStateSheetRef" :open="activeModal === 'state'" :stop="currentStopForModal"
-                    :palette="colorPalette" :time="scenario.time"
-                    :context="modalPayload === 'start' ? 'start' : 'end'"
+                    :palette="colorPalette" :time="scenario.time" :context="modalPayload === 'start' ? 'start' : 'end'"
                     :auto-brightness="autoBrightness" :sensor-options="sensorOptions"
                     @update:stop="handleStopModalUpdate" @update:autoBrightness="handleAutoBrightnessUpdate" />
             </ScenarioSheet>
@@ -1780,6 +1831,28 @@ function handleResumeFromDial() {
     white-space: nowrap;
     flex: 1 1 0;
     min-width: 0;
+}
+
+.scenario-history-section {
+    width: 100%;
+    min-width: 250px;
+    max-width: 400px;
+    gap: 8px;
+}
+
+.scenario-history-error,
+.scenario-history-loading {
+    margin: 0;
+    font-size: 13px;
+    text-align: center;
+}
+
+.scenario-history-error {
+    color: #f87171;
+}
+
+.scenario-history-loading {
+    color: rgba(226, 232, 240, 0.8);
 }
 
 .settings-column {

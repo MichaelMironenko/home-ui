@@ -73,7 +73,8 @@ async function logout() {
     console.warn('[auth] logout failed', err)
   }
   user.value = null
-  ready.value = true
+  ready.value = false
+  initPromise = null
 }
 
 export function useAuth() {

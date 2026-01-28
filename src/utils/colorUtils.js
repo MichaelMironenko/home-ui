@@ -105,8 +105,8 @@ export function temperatureToHex(kelvin) {
 
 export function applyBrightnessHex(hex, brightness, enabled) {
     if (!enabled || !Number.isFinite(brightness) || brightness >= 100) return hex
-    const normalized = Math.max(1, Math.min(100, brightness))
-    const ratio = easeLowBrightness(normalized / 100)
+    const normalized = Math.max(0, Math.min(100, brightness))
+    const ratio = clampNumber(normalized / 100, 0, 1)
     const factor = 0.5 + 0.5 * ratio
     const { r, g, b } = hexToRgb(hex)
     return rgbToHex(Math.round(r * factor), Math.round(g * factor), Math.round(b * factor))

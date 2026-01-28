@@ -39,11 +39,14 @@ const router = createRouter({
 const auth = useAuth()
 const profileStore = useProfile()
 let profileLoadPromise = null
+let profileEnsuredUserKey = ''
 
 router.beforeEach(async (to, from, next) => {
   const isPublic = to.matched.some(record => record.meta?.public === true)
   try {
-    await auth.ensureSession()
+    if (!auth.ready.value) {
+      await auth.ensureSession()
+    }
   } catch (err) {
     console.warn('[auth] ensureSession failed', err)
   }
@@ -67,12 +70,34 @@ router.beforeEach(async (to, from, next) => {
   next()
 })
 
+function resolveUserKey(user) {
+  if (!user || typeof user !== 'object') return ''
+  return user.id || user.email || user.login || ''
+}
+
 async function ensureProfileForCity() {
-  if (!auth.user.value) return
+  if (!auth.user.value) {
+    profileEnsuredUserKey = ''
+    return
+  }
+
   const current = router.currentRoute.value
   const isPublic = current.matched.some(record => record.meta?.public === true)
   if (current.name === 'profile' || isPublic) return
-  if (profileStore.profile.value?.city) return
+
+  const userKey = resolveUserKey(auth.user.value)
+  const profileData = profileStore.profile.value
+  const hasProfile = Boolean(profileData && typeof profileData === 'object')
+  const hasCity = Boolean(profileData?.city)
+
+  if (profileEnsuredUserKey === userKey && hasProfile) {
+    if (hasCity) return
+    if (current.name !== 'profile') {
+      router.replace({ name: 'profile', query: { cityRequired: '1' } })
+    }
+    return
+  }
+
   if (profileLoadPromise) return profileLoadPromise
 
   profileLoadPromise = (async () => {
@@ -83,10 +108,11 @@ async function ensureProfileForCity() {
       return
     }
 
-    const profileData = profileStore.profile.value
+    profileEnsuredUserKey = userKey
+    const profileDataAfter = profileStore.profile.value
     const liveRoute = router.currentRoute.value
     const liveIsPublic = liveRoute.matched.some(record => record.meta?.public === true)
-    if (!profileData?.city && liveRoute.name !== 'profile' && !liveIsPublic) {
+    if (!profileDataAfter?.city && liveRoute.name !== 'profile' && !liveIsPublic) {
       router.replace({ name: 'profile', query: { cityRequired: '1' } })
     }
   })()

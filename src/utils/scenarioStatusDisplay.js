@@ -12,8 +12,8 @@ const PAUSE_REASON_LABELS = {
     presence_away: 'Никого нет дома'
 }
 
-const PAUSE_MANUAL_SOURCES = new Set(['manual', 'manual_pause'])
-const PAUSE_MANUAL_IDENTIFIERS = new Set(['manual', 'manual_pause', 'app_button_pause'])
+const PAUSE_MANUAL_SOURCES = new Set(['manual', 'manual_pause', 'manual_override'])
+const PAUSE_MANUAL_IDENTIFIERS = new Set(['manual', 'manual_pause', 'manual_override', 'app_button_pause'])
 const PAUSE_AUTO_SOURCES = new Set(['autopause', 'presence', 'presence_guard', 'away', 'presence_away'])
 
 const CURRENT_WINDOW_KEYS = ['window', 'currentWindow', 'activeWindow']

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import DeviceCard from './DeviceCard.vue'
 import { trackYandexCall } from '../lib/requestMetrics'
 import { hasBrightnessCapability, supportsColorCapability } from '../utils/deviceCapabilities'
@@ -8,6 +8,7 @@ const props = defineProps({
     apiBase: { type: String, required: true },
     path: { type: String, required: true },
     apiKey: { type: String, default: '' },
+    autoRefresh: { type: Boolean, default: true }
 })
 
 const loading = ref(true)
@@ -71,6 +72,7 @@ const shouldDisplayDevice = (device) => {
 }
 
 let pollId = null
+const CATALOG_POLL_INTERVAL_MS = 5 * 60 * 1000
 
 async function loadCatalog({ refresh = false, showLoading = false } = {}) {
     if (fetching.value) return
@@ -135,16 +137,37 @@ async function loadCatalog({ refresh = false, showLoading = false } = {}) {
     return true
 }
 
+function stopCatalogPolling() {
+    if (!pollId) return
+    clearInterval(pollId)
+    pollId = null
+}
+
+function startCatalogPolling() {
+    if (!props.autoRefresh) return
+    if (pollId) return
+    pollId = setInterval(() => loadCatalog({ refresh: false, showLoading: false }), CATALOG_POLL_INTERVAL_MS)
+}
+
+watch(
+    () => props.autoRefresh,
+    (enabled) => {
+        if (enabled) startCatalogPolling()
+        else stopCatalogPolling()
+    },
+    { immediate: true }
+)
+
 onMounted(async () => {
     const initialSuccess = await loadCatalog({ refresh: false, showLoading: true })
     if (initialSuccess) {
         loadCatalog({ refresh: true, showLoading: false })
     }
-    pollId = setInterval(() => loadCatalog({ refresh: false, showLoading: false }), 60000)
+    startCatalogPolling()
 })
 
 onBeforeUnmount(() => {
-    if (pollId) clearInterval(pollId)
+    stopCatalogPolling()
 })
 
 const filteredDevices = computed(() => devices.value.filter(shouldDisplayDevice))

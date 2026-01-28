@@ -140,6 +140,8 @@ const groupedEvents = computed(() => {
             colorTemperature: event.colorTemperature,
             colorHexDisplay: event.colorHexDisplay,
             sensorLux: event.sensorLux,
+            sensorOff: event.sensorOff,
+            sensorOffReason: event.sensorOffReason,
             statusLabel: event.statusLabel,
         })
     }
@@ -219,11 +221,11 @@ function scenarioLinkLocation(group) {
                                 <span v-if="row.statusLabel" class="metric metric-status">
                                     <span class="metric-value">{{ row.statusLabel }}</span>
                                 </span>
-                                <span v-if="row.brightnessDisplay" class="metric metric-brightness">
+                                <span v-if="row.brightnessDisplay && !row.sensorOff" class="metric metric-brightness">
                                     <span class="metric-icon" aria-hidden="true">💡</span>
                                     <span class="metric-value">{{ row.brightnessDisplay }}</span>
                                 </span>
-                                <span v-if="row._showColorAny" class="metric metric-color">
+                                <span v-if="row._showColorAny && !row.sensorOff" class="metric metric-color">
                                     <span v-if="row.colorHexDisplay || row.colorTemperature" class="color-swatch"
                                         :class="{ temperature: !row.colorHexDisplay }" :style="colorSwatchStyle(row)"></span>
                                     <span v-if="row.colorLabel || row._showCctOnly" class="metric-value">
@@ -238,7 +240,10 @@ function scenarioLinkLocation(group) {
                                             d="M12 4.5a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0v-1a1 1 0 0 1 1-1Zm6.364 3.136a1 1 0 0 1 0 1.414l-.707.707a1 1 0 0 1-1.414-1.414l.707-.707a1 1 0 0 1 1.414 0ZM18.5 13a1 1 0 0 1 0 2h-1a1 1 0 1 1 0-2h1Zm-12 0a1 1 0 1 1 0 2H5.5a1 1 0 0 1 0-2h1Zm1.257-5.243a1 1 0 0 1 0 1.414l-.707.707a1 1 0 0 1-1.414-1.414l.707-.707a1 1 0 0 1 1.414 0ZM12 9a4 4 0 1 1 0 8 4 4 0 0 1 0-8Zm0 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm-1 6.5h2V20a1 1 0 1 1-2 0v-2.5Z" />
                                         </svg>
                                     </span>
-                                    <span class="metric-value">{{ row.sensorLux }} lx</span>
+                                    <span class="metric-value">
+                                        {{ row.sensorLux }} lx
+                                        <span v-if="row.sensorOffReason === 'above'" class="metric-sensor-off">выкл</span>
+                                    </span>
                                 </span>
                             </div>
                         </div>
@@ -609,6 +614,15 @@ function scenarioLinkLocation(group) {
 .metric-value {
     font-weight: 400;
     color: var(--text-muted);
+}
+
+.metric-sensor-off {
+    margin-left: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
 }
 
 .metric-color .metric-value {

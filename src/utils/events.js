@@ -131,6 +131,12 @@ export function normalizeEvents(list, scenarioIndex = { byId: new Map(), byName:
             null
         const scenarioKey = String(scenarioId || raw?.scenarioName || scenarioName)
 
+        const sensorOff = raw?.sensorOff === true
+        const sensorOffReason =
+            typeof raw?.sensorOffReason === 'string'
+                ? raw.sensorOffReason
+                : ''
+
         return {
             id: dedupedId,
             timestamp,
@@ -147,6 +153,8 @@ export function normalizeEvents(list, scenarioIndex = { byId: new Map(), byName:
             colorTemperature: Number.isFinite(raw?.colorTemperature) ? Number(raw.colorTemperature) : null,
             colorHexDisplay: normalizedHex,
             sensorLux: Number.isFinite(raw?.sensorLux) ? Math.round(raw.sensorLux) : null,
+            sensorOff,
+            sensorOffReason,
             statusLabel,
             _isStatusOnly: isPauseEvent
         }

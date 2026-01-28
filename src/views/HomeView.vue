@@ -1,11 +1,13 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import DeviceGrid from '../components/DeviceGrid.vue'
 import { getConfig } from '../lib/api'
 import { setDocumentDescription, setDocumentTitle } from '../utils/pageTitle'
+import { useRunningScenarioMonitor } from '../composables/useRunningScenarioMonitor'
 
 const apiBase = ref(null)
 const loading = ref(true)
+const monitor = useRunningScenarioMonitor()
 
 setDocumentTitle('Устройства')
 setDocumentDescription('Каталог и текущее состояние устройств Яндекс Дома: включайте, отключайте и проверяйте статусы в ExtraHub.')
@@ -22,6 +24,12 @@ onMounted(async () => {
     } finally {
         loading.value = false
     }
+    await monitor.refresh().catch(() => {})
+    monitor.startAutoRefresh()
+})
+
+onUnmounted(() => {
+    monitor.stopAutoRefresh()
 })
 </script>
 
@@ -33,7 +41,12 @@ onMounted(async () => {
                 Показываются только устройства с поддержкой изменения яркости/цвета и датчики, измеряющие освещенность.
             </p>
         </header>
-        <DeviceGrid v-if="apiBase" :api-base="apiBase" path="/catalog" />
+        <DeviceGrid
+            v-if="apiBase"
+            :api-base="apiBase"
+            path="/catalog"
+            :auto-refresh="monitor.hasRunningScenario"
+        />
         <p v-else class="text-dimmed">Загрузка списка устройств…</p>
     </main>
 </template>
