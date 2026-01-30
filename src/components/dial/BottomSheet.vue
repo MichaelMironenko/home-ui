@@ -336,4 +336,14 @@ const overlayStyle = computed(() => ({
     flex: 1;
     min-height: 0;
 }
+
+@media (min-width: 768px) {
+    .bottom-sheet-overlay {
+        align-items: center;
+    }
+
+    .bottom-sheet-panel {
+        border-radius: 28px;
+    }
+}
 </style>

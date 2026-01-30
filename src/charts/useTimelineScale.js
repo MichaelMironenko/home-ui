@@ -1,6 +1,7 @@
 const DEFAULT_VIEW_SIZE = 640
 const DEFAULT_PADDING = { top: 36, bottom: 48, left: 60, right: 20 }
 const HOUR_MS = 60 * 60 * 1000
+const MIN_SPAN_MS = 1.5 * HOUR_MS
 
 function formatTime(ts) {
     if (!Number.isFinite(ts)) return ''
@@ -36,9 +37,13 @@ export function buildTimelineScale(events = [], config = {}) {
     const cutoff = Math.max(events[0].timestamp, latestTs - maxWindowMs)
     const filtered = events.filter((event) => event.timestamp >= cutoff)
     if (!filtered.length) return null
-    const startTime = filtered[0].timestamp
+    let startTime = filtered[0].timestamp
     const endTime = filtered[filtered.length - 1].timestamp
-    const span = endTime === startTime ? 1 : endTime - startTime
+    let span = endTime === startTime ? 1 : endTime - startTime
+    if (span < MIN_SPAN_MS) {
+        span = MIN_SPAN_MS
+        startTime = endTime - span
+    }
     const brightnessValues = filtered
         .filter((entry) => entry.hasBrightness)
         .map((entry) => entry.brightness)
@@ -77,8 +82,7 @@ export function buildTimelineScale(events = [], config = {}) {
             type: isPause ? 'pause' : isSensorOff ? 'sensor-off' : 'normal'
         })
     }
-    const hasSegments = segments.length > 0
-    if (!hasSegments) return null
+    // Keep returning scale even if there are no drawable segments so a single point can still render
     const ticks = buildTicks(startTime, endTime, span, padding, drawableWidth)
     const maxValue = chartMaxBrightness || 100
     const axisRatios = [1, 0.75, 0.5, 0.25, 0]

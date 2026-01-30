@@ -105,8 +105,6 @@ export function normalizeEvents(list, scenarioIndex = { byId: new Map(), byName:
         seenIds.set(baseId, dupCount + 1)
 
         const normalizedHex = normalizeHexColor(raw?.colorHex)
-        const rawColorLabel = typeof raw?.colorLabel === 'string' ? raw.colorLabel : ''
-        const colorLabel = normalizeHexColor(rawColorLabel) ? '' : rawColorLabel
         const scenarioId = raw?.scenarioId != null
             ? String(raw.scenarioId)
             : raw?.scenario_id != null
@@ -137,6 +135,8 @@ export function normalizeEvents(list, scenarioIndex = { byId: new Map(), byName:
                 ? raw.sensorOffReason
                 : ''
 
+        const brightnessValue = Number.isFinite(raw?.brightness) ? Math.round(raw.brightness) : null
+        const computedBrightnessDisplay = brightnessValue != null ? `${brightnessValue}%` : ''
         return {
             id: dedupedId,
             timestamp,
@@ -148,8 +148,8 @@ export function normalizeEvents(list, scenarioIndex = { byId: new Map(), byName:
             triggerVariant,
             triggerLabel: formatTriggerLabel(raw?.origin),
             triggerIcon: formatTriggerIcon(String(raw?.origin || '')),
-            brightnessDisplay: typeof raw?.brightness === 'string' ? raw.brightness.trim() : '',
-            colorLabel,
+            brightnessDisplay: computedBrightnessDisplay,
+            brightness: brightnessValue,
             colorTemperature: Number.isFinite(raw?.colorTemperature) ? Number(raw.colorTemperature) : null,
             colorHexDisplay: normalizedHex,
             sensorLux: Number.isFinite(raw?.sensorLux) ? Math.round(raw.sensorLux) : null,
@@ -164,7 +164,6 @@ export function normalizeEvents(list, scenarioIndex = { byId: new Map(), byName:
         if (!event) return null
         if (event.colorHexDisplay) return `hex:${event.colorHexDisplay}`
         if (Number.isFinite(event.colorTemperature)) return `cct:${Math.round(event.colorTemperature)}`
-        if (event.colorLabel) return `label:${event.colorLabel}`
         return null
     }
 
@@ -181,7 +180,9 @@ export function normalizeEvents(list, scenarioIndex = { byId: new Map(), byName:
 
         const currentColorKey = colorKeyOf(event)
         const prevColorKeyState = prev?.colorKeyState || null
-        const showColor = Boolean(prev && currentColorKey && currentColorKey !== prevColorKeyState)
+        const colorChanged = Boolean(prev && currentColorKey && currentColorKey !== prevColorKeyState)
+        const initialColorState = Boolean(!prev && currentColorKey)
+        const showColor = Boolean((colorChanged || initialColorState) && currentColorKey)
 
         const nextBrightnessState = prev ? prevBrightnessState : ''
         const nextColorKeyState = prev ? prevColorKeyState : null
@@ -198,14 +199,13 @@ export function normalizeEvents(list, scenarioIndex = { byId: new Map(), byName:
             brightnessDisplay: showBrightness && !isStatusOnly ? event.brightnessDisplay : '',
             colorTemperature: showColor && !isStatusOnly ? currentCct : null,
             colorHexDisplay: showColor && !isStatusOnly ? event.colorHexDisplay : null,
-            colorLabel: showColor && !isStatusOnly ? event.colorLabel : '',
+            reportedColorTemperature: !isStatusOnly && currentCct != null ? currentCct : null,
             statusLabel: isStatusOnly ? event.statusLabel : '',
             _showCctOnly:
                 !isStatusOnly &&
                 showColor &&
                 currentCct != null &&
-                !event.colorHexDisplay &&
-                !event.colorLabel,
+                !event.colorHexDisplay,
             _showColorAny: Boolean(showColor) && !isStatusOnly,
             _showBrightnessAny: Boolean(showBrightness) && !isStatusOnly
         }

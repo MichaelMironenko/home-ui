@@ -136,7 +136,6 @@ const groupedEvents = computed(() => {
             brightnessDisplay: event.brightnessDisplay,
             _showColorAny: Boolean(event._showColorAny),
             _showCctOnly: Boolean(event._showCctOnly),
-            colorLabel: event.colorLabel,
             colorTemperature: event.colorTemperature,
             colorHexDisplay: event.colorHexDisplay,
             sensorLux: event.sensorLux,
@@ -228,9 +227,8 @@ function scenarioLinkLocation(group) {
                                 <span v-if="row._showColorAny && !row.sensorOff" class="metric metric-color">
                                     <span v-if="row.colorHexDisplay || row.colorTemperature" class="color-swatch"
                                         :class="{ temperature: !row.colorHexDisplay }" :style="colorSwatchStyle(row)"></span>
-                                    <span v-if="row.colorLabel || row._showCctOnly" class="metric-value">
-                                        <template v-if="row.colorLabel">{{ row.colorLabel }}</template>
-                                        <template v-else-if="row._showCctOnly">{{ row.colorTemperature }}K</template>
+                                    <span v-if="row.colorTemperature != null" class="metric-value">
+                                        {{ row.colorTemperature }}K
                                     </span>
                                 </span>
                                 <span v-if="row.sensorLux != null" class="metric">

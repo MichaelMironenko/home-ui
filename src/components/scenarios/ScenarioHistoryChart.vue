@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, toRefs } from 'vue'
 import { normalizeScenarioEvents } from '../../domain/scenarioHistory/normalizeEvents'
 import { buildTimelineScale, DEFAULT_CHART_SIZE, DEFAULT_CHART_PADDING } from '../../charts/useTimelineScale'
 
@@ -21,11 +21,13 @@ const props = defineProps({
     }
 })
 
+const { defaultColor } = toRefs(props)
+
 const chartRef = ref(null)
 const hoveredPoint = ref(null)
 
 const normalizedEvents = computed(() =>
-    normalizeScenarioEvents(props.events, { fallbackColor: props.defaultColor })
+    normalizeScenarioEvents(props.events, { fallbackColor: defaultColor.value })
 )
 
 const chartScale = computed(() =>
@@ -35,12 +37,13 @@ const chartScale = computed(() =>
 )
 
 const chartPoints = computed(() => chartScale.value?.points ?? [])
+const visiblePoints = computed(() => chartPoints.value.filter((point) => point.hasBrightness))
 const lineSegments = computed(() => chartScale.value?.segments ?? [])
 const gradientSegments = computed(() => lineSegments.value.filter((segment) => segment.type === 'normal'))
 const ticks = computed(() => chartScale.value?.ticks ?? [])
 const axisMarkers = computed(() => chartScale.value?.axisMarkers ?? [])
 const gridMarkers = computed(() => chartScale.value?.gridMarkers ?? [])
-const isEmpty = computed(() => !chartScale.value || !lineSegments.value.length)
+const isEmpty = computed(() => !chartScale.value || !visiblePoints.value.length)
 
 const statusMarkers = computed(() =>
     chartPoints.value
@@ -172,7 +175,10 @@ function handleTouchEnd() {
                 <p class="tooltip-color">
                     <span>Цвет:</span>
                     <span class="color-chip" :style="{ background: hoveredPoint.color }"></span>
-                    <strong>{{ hoveredPoint.color?.toUpperCase() }}</strong>
+                    <strong>
+                        {{ hoveredPoint.colorTemperature ? `${hoveredPoint.colorTemperature}K` :
+                            hoveredPoint.color?.toUpperCase() }}
+                    </strong>
                 </p>
                 <p v-if="hoveredPoint.statusLabel" class="tooltip-status">{{ hoveredPoint.statusLabel }}</p>
             </div>
@@ -282,6 +288,7 @@ function handleTouchEnd() {
     fill: rgba(59, 130, 246, 0.7);
 }
 
+
 .hover-line {
     stroke: rgba(244, 255, 214, 0.5);
     stroke-width: 1;
@@ -302,7 +309,6 @@ function handleTouchEnd() {
     font-size: 12px;
     color: #f8fafc;
     pointer-events: none;
-    min-width: 150px;
     box-shadow: 0 10px 30px rgba(2, 6, 23, 0.35);
 }
 

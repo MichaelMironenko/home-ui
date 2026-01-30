@@ -441,14 +441,18 @@ function applyDeviceSelectionChanges() {
     if (activeModal.value !== 'devices') return
     const nextGroups = new Set(deviceSelectionDraftGroups.value)
     const nextDevices = new Set(deviceSelectionDraftDevices.value)
+    if (!nextGroups.size && !nextDevices.size) {
+        deviceSheetError.value = SHEET_SELECTION_ERROR
+        return
+    }
     const groupsChanged = !setsEqual(nextGroups, selectedGroupIds.value)
     const devicesChanged = !setsEqual(nextDevices, selectedDevicesIds.value)
+    const shouldMarkDirty = (groupsChanged || devicesChanged) && !selectionDirty.value
     selectedGroupIds.value = nextGroups
     selectedDevicesIds.value = nextDevices
+    if (shouldMarkDirty) selectionDirty.value = true
     sanitizeSelectionSets()
-    if ((groupsChanged || devicesChanged) && !selectionDirty.value) {
-        selectionDirty.value = true
-    }
+    deviceSheetError.value = ''
     closeModal()
 }
 
@@ -687,6 +691,7 @@ async function loadScenarioEvents() {
     try {
         const data = await apiFetch('/events')
         events.value = normalizeEvents(data?.events || [], eventsScenarioIndex.value)
+        await refreshScenarioStatus()
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         eventsError.value = `Ошибка загрузки истории: ${message}`
@@ -721,9 +726,7 @@ function stopCatalogPolling() {
     catalogInterval = null
 }
 
-const shouldPollEvents = computed(
-    () => canControlRuntime.value && scenarioRuntimeStatus.value?.kind === 'running'
-)
+const shouldPollEvents = computed(() => canControlRuntime.value)
 
 const shouldPollCatalog = computed(
     () => canControlRuntime.value && scenarioRuntimeStatus.value?.kind === 'running'
@@ -917,6 +920,11 @@ async function refreshScenarioStatus() {
 }
 
 async function saveScenario() {
+    if (!hasSelectedTargets.value) {
+        scenarioError.value = PAGE_SELECTION_ERROR
+        scenarioMessage.value = ''
+        return
+    }
     scenarioSaving.value = true
     scenarioError.value = ''
     scenarioMessage.value = ''
@@ -1157,6 +1165,17 @@ const selectedTargetsLabel = computed(() => {
     return `${parts.slice(0, 2).join(', ')} +${parts.length - 2}`
 })
 
+const PAGE_SELECTION_ERROR = 'Выберите устройства'
+const SHEET_SELECTION_ERROR = 'Выберите хотя бы одно устройство'
+const hasSelectedTargets = computed(
+    () => selectedGroupIds.value.size > 0 || selectedDevicesIds.value.size > 0
+)
+watch(hasSelectedTargets, (has) => {
+    if (has && scenarioError.value === PAGE_SELECTION_ERROR) {
+        scenarioError.value = ''
+    }
+})
+
 const deviceSections = computed(() => {
     const sectionMap = new Map()
     const roomOrder = new Map()
@@ -1226,6 +1245,15 @@ const deviceSections = computed(() => {
 
 const deviceSelectionDraftGroups = ref(new Set())
 const deviceSelectionDraftDevices = ref(new Set())
+const deviceSheetError = ref('')
+const deviceSelectionDraftHasTargets = computed(
+    () => deviceSelectionDraftGroups.value.size > 0 || deviceSelectionDraftDevices.value.size > 0
+)
+watch(deviceSelectionDraftHasTargets, (has) => {
+    if (has && deviceSheetError.value === SHEET_SELECTION_ERROR) {
+        deviceSheetError.value = ''
+    }
+})
 const activeModal = ref(null)
 const isDeviceSheetActive = computed(() => activeModal.value === 'devices')
 const deviceSelectionForSheet = computed(() => ({
@@ -1270,6 +1298,7 @@ const prioritizedDeviceSections = computed(() => {
 })
 
 const deviceSheetSections = ref(prioritizedDeviceSections.value)
+
 const prioritizeSelectionOnNextOpen = ref(true)
 watch(
     () => activeModal.value,
@@ -1323,6 +1352,7 @@ function openModal(type, payload = null) {
 function closeModal() {
     activeModal.value = null
     modalPayload.value = null
+    deviceSheetError.value = ''
 }
 
 const currentStopForModal = computed(() => {
@@ -1568,6 +1598,7 @@ function handleResumeFromDial() {
                 <DeviceSelectorSheet :sections="deviceSheetSections" :selected-ids="deviceSelectionForSheet.devices"
                     :selected-groups="deviceSelectionForSheet.groups" @toggle-group="handleGroupToggle"
                     @toggle-device="handleDeviceToggle" />
+                <p v-if="deviceSheetError" class="device-sheet-error">{{ deviceSheetError }}</p>
             </ScenarioSheet>
 
             <ScenarioSheet :open="activeModal === 'schedule'" title="Запускать" @close="closeModal"
@@ -1912,7 +1943,7 @@ function handleResumeFromDial() {
         min-width: 250px;
     }
 
-    .scenario-actions-footer {
+.scenario-actions-footer {
         margin-top: auto;
     }
 }
@@ -1921,6 +1952,13 @@ function handleResumeFromDial() {
 .status-info {
     margin: 4px 0 0;
     font-size: 13px;
+}
+
+.device-sheet-error {
+    margin: 12px 0 0;
+    font-size: 0.9rem;
+    color: #f87171;
+    text-align: center;
 }
 
 .status-info.success {

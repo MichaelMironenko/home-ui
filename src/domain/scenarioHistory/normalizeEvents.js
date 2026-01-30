@@ -8,6 +8,7 @@ import { temperatureToHex } from '../../utils/colorUtils'
  * @property {number} timestamp
  * @property {string} brightnessDisplay
  * @property {string} colorHexDisplay
+ * @property {number} reportedColorTemperature
  * @property {number} colorTemperature
  * @property {boolean} sensorOff
  * @property {string} statusLabel
@@ -31,16 +32,10 @@ import { temperatureToHex } from '../../utils/colorUtils'
  */
 
 function parseBrightness(event) {
-    const display = typeof event.brightnessDisplay === 'string'
-        ? event.brightnessDisplay
-        : typeof event.brightness === 'string'
-            ? event.brightness
-            : ''
-    if (typeof display !== 'string' || !display.trim()) return null
-    const cleaned = display.replace('%', '').replace(',', '.').trim()
-    const parsed = Number(cleaned)
-    if (!Number.isFinite(parsed)) return null
-    return Math.min(Math.max(parsed, 0), 100)
+    if (Number.isFinite(event.brightness)) {
+        return Math.min(Math.max(Number(event.brightness), 0), 100)
+    }
+    return null
 }
 
 function resolveStatusKind(event) {
@@ -86,11 +81,14 @@ export function normalizeScenarioEvents(events = [], { fallbackColor = '#a855f7'
         if (brightness != null) {
             lastBrightness = brightness
         }
+        const colorTemperature =
+            Number.isFinite(event.reportedColorTemperature)
+                ? Math.round(event.reportedColorTemperature)
+                : Number.isFinite(event.colorTemperature)
+                    ? Math.round(event.colorTemperature)
+                    : null
         const color =
-            event.colorHexDisplay ||
-            (Number.isFinite(event.colorTemperature) ? temperatureToHex(event.colorTemperature) : null) ||
-            (typeof event.colorLabel === 'string' ? event.colorLabel : null) ||
-            lastColor
+            event.colorHexDisplay || (colorTemperature ? temperatureToHex(colorTemperature) : null) || lastColor
         if (color) lastColor = color
         const statusKind = resolveStatusKind(event)
         const statusLabel =
@@ -102,6 +100,7 @@ export function normalizeScenarioEvents(events = [], { fallbackColor = '#a855f7'
             brightness: lastBrightness,
             hasBrightness: Number.isFinite(lastBrightness),
             color,
+            colorTemperature,
             statusKind,
             statusLabel,
             sensorOff: Boolean(event.sensorOff),
