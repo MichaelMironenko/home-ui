@@ -88,7 +88,7 @@ function setCustomColor(event) {
                     <button v-for="color in palette" :key="color" type="button" class="swatch"
                         :class="{ active: stop.colorHex === color }" :style="{ background: color }"
                         @click="setPaletteColor(color)" />
-                    <label class="swatch swatch-add" aria-label="Выбрать свой цвет" @pointerdown.stop>
+                    <label v-if="false" class="swatch swatch-add" aria-label="Выбрать свой цвет" @pointerdown.stop>
                         <svg viewBox="0 0 24 24" aria-hidden="true" class="swatch-add-icon">
                             <path
                                 d="M12 4a1 1 0 0 1 1 1v6h6a1 1 0 1 1 0 2h-6v6a1 1 0 1 1-2 0v-6H5a1 1 0 1 1 0-2h6V5a1 1 0 0 1 1-1Z" />

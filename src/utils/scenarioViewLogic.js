@@ -116,8 +116,8 @@ export function buildBrightnessAction({ startStop, endStop, autoBrightness }) {
             }
         }
     }
-    const from = clampNumberLocal(startStop.brightness ?? endStop.brightness ?? 0, 1, 100)
-    const to = clampNumberLocal(endStop.brightness ?? startStop.brightness ?? from, 1, 100)
+    const from = clampNumberLocal(startStop.brightness ?? endStop.brightness ?? 0, 0, 100)
+    const to = clampNumberLocal(endStop.brightness ?? startStop.brightness ?? from, 0, 100)
     return {
         type: 'light.brightness',
         source: {
@@ -256,10 +256,10 @@ export function hydrateStopsFromActions(actions, { startStop, endStop, autoBrigh
         } else {
             autoBrightness.enabled = false
             if (brightnessAction.source.from != null) {
-                startStop.brightness = clampNumberLocal(brightnessAction.source.from, 1, 100)
+                startStop.brightness = clampNumberLocal(brightnessAction.source.from, 0, 100)
             }
             if (brightnessAction.source.to != null) {
-                endStop.brightness = clampNumberLocal(brightnessAction.source.to, 1, 100)
+                endStop.brightness = clampNumberLocal(brightnessAction.source.to, 0, 100)
             }
         }
     } else {

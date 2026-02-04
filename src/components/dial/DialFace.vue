@@ -26,7 +26,7 @@ const FULL_CIRCLE_DEG = 360
 const TICK_EDGE_RATIO = 20
 const NUMBER_RADIUS_RATIO = 3.5
 const DIAL_DAY_COLOR = 'rgba(255, 216, 170, 0.82)'
-const DIAL_NIGHT_COLOR = '#4a88e8'
+const DIAL_NIGHT_COLOR = '#6982AB'
 const NEEDLE_INNER = 46
 const NEEDLE_OUTER = 78
 
@@ -135,13 +135,13 @@ function normalizeMinutes(value) {
                 :y2="tick.y2" />
         </g>
         <g class="face-hours">
-            <text v-for="item in innerHourNumberItems" :key="item.hour" class="face-hour"
-                :class="{ major: item.major }" :x="item.x" :y="item.y" :fill="item.color">
+            <text v-for="item in innerHourNumberItems" :key="item.hour" class="face-hour" :class="{ major: item.major }"
+                :x="item.x" :y="item.y" :fill="item.color">
                 {{ item.hour }}
             </text>
         </g>
-        <line v-if="currentNeedle" class="current-needle" :x1="currentNeedle.start.x"
-            :y1="currentNeedle.start.y" :x2="currentNeedle.end.x" :y2="currentNeedle.end.y" />
+        <line v-if="currentNeedle" class="current-needle" :x1="currentNeedle.start.x" :y1="currentNeedle.start.y"
+            :x2="currentNeedle.end.x" :y2="currentNeedle.end.y" />
     </g>
 </template>
 

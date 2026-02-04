@@ -73,7 +73,7 @@ function setBrightnessSelection(value) {
 
 function updateBrightness(value) {
     const numeric = Math.round(Number(value) || 0)
-    commitStop({ brightness: Math.max(1, Math.min(100, numeric)) })
+    commitStop({ brightness: Math.max(0, Math.min(100, numeric)) })
 }
 
 watch(
@@ -282,7 +282,7 @@ function handleSensorChange(event) {
                 <div v-else class="slider-block">
                     <label>
                         <span class="slider-value">{{ stop.brightness }}%</span>
-                        <input class="gradient-range" type="range" min="1" max="100"
+                        <input class="gradient-range" type="range" min="0" max="100"
                             :style="{ '--range-gradient': brightnessGradient }" :value="stop.brightness"
                             @input="updateBrightness($event.target.value)" />
                     </label>

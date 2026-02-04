@@ -37,6 +37,11 @@ function mapScenarioEntry(entry) {
         overlaps: Array.isArray(entry?.overlaps) ? entry.overlaps : [],
         targetGroups: Array.isArray(entry?.scenario?.target?.groups)
             ? entry.scenario.target.groups.map((groupId) => String(groupId))
+            : [],
+        targetDevices: Array.isArray(entry?.scenario?.target?.devices)
+            ? entry.scenario.target.devices
+                .map((deviceId) => String(deviceId || '').trim())
+                .filter(Boolean)
             : []
     }
 }

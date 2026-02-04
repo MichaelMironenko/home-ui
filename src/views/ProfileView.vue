@@ -4,7 +4,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { useProfile } from '../composables/useProfile'
 import { useAuth } from '../composables/useAuth'
 import { setDocumentDescription, setDocumentTitle } from '../utils/pageTitle'
-import SegmentedControl from '../components/dial/SegmentedControl.vue'
 
 const profileStore = useProfile()
 const auth = useAuth()
@@ -23,22 +22,9 @@ const displayName = computed(() => profileData.value?.displayName || '')
 const presenceSeen = computed(() => profileData.value?.presenceSeen || { home: false, away: false })
 const presenceHomeReady = computed(() => presenceSeen.value?.home === true)
 const presenceAwayReady = computed(() => presenceSeen.value?.away === true)
+const presenceConfigured = computed(() => presenceHomeReady.value && presenceAwayReady.value)
 const presenceStatusLabel = (ready) => ready ? 'работает' : 'ожидание'
 const presenceApiTokenCreatedAt = computed(() => profileData.value?.presenceApiTokenCreatedAt || null)
-const issuedPresenceToken = ref('')
-const issuingPresenceToken = ref(false)
-const presenceTokenError = ref('')
-const presencePlatform = ref('ios')
-const presencePlatformOptions = [
-    { value: 'ios', label: 'iPhone (Shortcuts)' },
-    { value: 'android', label: 'Android (Tasker)' }
-]
-
-const presenceEndpoint = computed(() => instructions.value?.endpoint || '/api/presence')
-const presenceAuthHeader = computed(() => {
-    const token = issuedPresenceToken.value?.trim()
-    return token ? `Authorization: Bearer ${token}` : 'Authorization: Bearer <token>'
-})
 
 const cityQuery = ref('')
 const selectedCity = ref(null)
@@ -55,7 +41,6 @@ const deletingProfile = ref(false)
 const userTypingCity = ref(false)
 
 const cityInputHint = 'Можно ввести вручную и нажать «Сохранить город».'
-
 const showSuggestions = computed(() => manualSuggestions.value.length > 0 && cityQuery.value.trim().length >= 2)
 
 let suggestionTimer = null
@@ -88,6 +73,10 @@ function clearCityRequiredQuery() {
         delete nextQuery.cityRequired
         router.replace({ query: nextQuery }).catch(() => { })
     }
+}
+
+function openPresenceSetupPage() {
+    router.push({ name: 'presence-setup' })
 }
 
 async function saveCity(city) {
@@ -123,9 +112,8 @@ async function tryGeolocation(fromAuto = false) {
         geoError.value = 'Геолокация недоступна в браузере.'
         return null
     }
-    if (geoInFlight.value) {
-        return
-    }
+    if (geoInFlight.value) return
+
     geoInFlight.value = true
     geoError.value = ''
     console.log('[profile] geolocation start')
@@ -194,12 +182,12 @@ async function runDetection(autoApply = false) {
             }
             return
         }
-    if (detection.status === 'needs_geo') {
-      const tzName = detection.timezone?.name || detection.timezone?.timezone || 'указанной таймзоны'
-      if (detection.ip?.city) {
-        detectionMessage.value = `IP сообщает о городе ${detection.ip.city}, но локальное время отличается. Попробуем геолокацию или введите город вручную.`
-      } else {
-        detectionMessage.value = `Не удалось подтвердить город по IP. Попробуем геолокацию или введите город в ${tzName}.`
+        if (detection.status === 'needs_geo') {
+            const tzName = detection.timezone?.name || detection.timezone?.timezone || 'указанной таймзоны'
+            if (detection.ip?.city) {
+                detectionMessage.value = `IP сообщает о городе ${detection.ip.city}, но локальное время отличается. Попробуем геолокацию или введите город вручную.`
+            } else {
+                detectionMessage.value = `Не удалось подтвердить город по IP. Попробуем геолокацию или введите город в ${tzName}.`
             }
             await triggerAutoGeolocation()
             return
@@ -220,50 +208,31 @@ async function runDetection(autoApply = false) {
     }
 }
 
-async function handleIssuePresenceToken() {
-    if (issuingPresenceToken.value) return
-    issuingPresenceToken.value = true
-    presenceTokenError.value = ''
-    issuedPresenceToken.value = ''
-    try {
-        const data = await profileStore.issuePresenceToken()
-        issuedPresenceToken.value = data?.token || ''
-        await profileStore.loadProfile(true).catch(() => { })
-        if (issuedPresenceToken.value && navigator?.clipboard?.writeText) {
-            await navigator.clipboard.writeText(issuedPresenceToken.value).catch(() => { })
-        }
-    } catch (err) {
-        presenceTokenError.value = err?.message || 'Не удалось сгенерировать токен'
-    } finally {
-        issuingPresenceToken.value = false
-    }
-}
-
 async function saveCityFromInput() {
     const name = cityQuery.value.trim()
     if (!name) {
         statusMessage.value = 'Введите город'
         return
     }
-  let city = null
-  if (selectedCity.value && selectedCity.value.name === name) {
-    city = selectedCity.value
-  }
-  if (!city || !city.timezone || city.lat == null || city.lon == null) {
-    try {
-      const lookup = await profileStore.geocodeCityByName(name, { limit: 1 })
-      city = lookup?.city || lookup?.suggestions?.[0] || city
-    } catch (err) {
-      statusMessage.value = err?.message || 'Не удалось сохранить город'
-      return
+    let city = null
+    if (selectedCity.value && selectedCity.value.name === name) {
+        city = selectedCity.value
     }
-  }
-  if (!city || !city.timezone) {
-    statusMessage.value = 'Не нашли такой город'
-    return
-  }
-  await saveCity(city)
-  detectionMessage.value = ''
+    if (!city || !city.timezone || city.lat == null || city.lon == null) {
+        try {
+            const lookup = await profileStore.geocodeCityByName(name, { limit: 1 })
+            city = lookup?.city || lookup?.suggestions?.[0] || city
+        } catch (err) {
+            statusMessage.value = err?.message || 'Не удалось сохранить город'
+            return
+        }
+    }
+    if (!city || !city.timezone) {
+        statusMessage.value = 'Не нашли такой город'
+        return
+    }
+    await saveCity(city)
+    detectionMessage.value = ''
 }
 
 function selectSuggestion(option) {
@@ -338,9 +307,7 @@ watch(cityQuery, (value, _old, onCleanup) => {
         suggestionsError.value = ''
         try {
             const data = await profileStore.geocodeCityByName(trimmed, { limit: 5 })
-            if (currentRequest !== suggestionRequestId) {
-                return
-            }
+            if (currentRequest !== suggestionRequestId) return
             const backendSuggestions = Array.isArray(data?.suggestions) ? data.suggestions : []
             if (backendSuggestions.length) {
                 manualSuggestions.value = backendSuggestions
@@ -350,9 +317,7 @@ watch(cityQuery, (value, _old, onCleanup) => {
                 manualSuggestions.value = []
             }
         } catch (err) {
-            if (currentRequest !== suggestionRequestId) {
-                return
-            }
+            if (currentRequest !== suggestionRequestId) return
             suggestionsError.value = err?.message || 'Не удалось загрузить подсказки.'
             manualSuggestions.value = []
         } finally {
@@ -432,9 +397,7 @@ async function handleDeleteProfile() {
                 <h2>Город</h2>
                 <p class="hint">Нужен для корректной работы сценариев</p>
             </div>
-            <p v-if="cityRequired" class="error-message">
-                Укажите город, чтобы продолжить пользоваться сервисом.
-            </p>
+            <p v-if="cityRequired" class="error-message">Укажите город, чтобы продолжить пользоваться сервисом.</p>
 
             <div class="city-search-block">
                 <div class="city-input-row">
@@ -443,8 +406,9 @@ async function handleDeleteProfile() {
                             autocomplete="off" @input="handleCityInput" @focus="handleCityInputFocus"
                             @blur="handleCityInputBlur">
                         <div v-if="showSuggestions" class="city-suggestions">
-                            <button v-for="option in manualSuggestions" :key="`${option.name}-${option.lat}-${option.lon}`"
-                                type="button" class="suggestion-item" @click="selectSuggestion(option)">
+                            <button v-for="option in manualSuggestions"
+                                :key="`${option.name}-${option.lat}-${option.lon}`" type="button"
+                                class="suggestion-item" @click="selectSuggestion(option)">
                                 <span class="suggestion-line">
                                     {{ option.name }}
                                     <span v-if="option.region || option.country || option.countryCode"
@@ -456,149 +420,51 @@ async function handleDeleteProfile() {
                         </div>
                     </div>
                     <div class="city-actions">
-                        <button type="button" class="apply-btn" @click="saveCityFromInput">
-                            Сохранить
-                        </button>
+                        <button type="button" class="apply-btn" @click="saveCityFromInput">Сохранить</button>
                     </div>
                 </div>
-                <p class="muted small">
-                    {{ savedCityNotice || cityInputHint }}
-                </p>
+                <p class="muted small">{{ savedCityNotice || cityInputHint }}</p>
             </div>
 
             <p v-if="cityDetectionLoading" class="muted small">Определяем город автоматически…</p>
             <p v-if="geoInFlight && !profileData?.city" class="muted small">Получаем координаты устройства…</p>
             <p v-if="suggestionsLoading" class="muted small">Ищем подсказки…</p>
             <p v-if="suggestionsError" class="error-message">{{ suggestionsError }}</p>
-
             <p v-if="statusMessage" class="status-message">{{ statusMessage }}</p>
             <p v-if="detectionMessage" class="muted">{{ detectionMessage }}</p>
             <p v-if="geoError" class="error-message">{{ geoError }}</p>
         </section>
 
-        <section v-if="instructions" class="panel instructions-panel">
-            <div class="panel-heading">
-                <h2>Настройка присутствия</h2>
-                <p>Позволяет запускать сценарии только когда кто-то дома и выключать свет, когда ушли все.</p>
-            </div>
-            <div class="presence-platform">
-                <SegmentedControl aria-label="Платформа" :model-value="presencePlatform"
-                    :options="presencePlatformOptions" @update:model-value="presencePlatform = $event" />
-            </div>
-            <div class="instruction-block">
-                <h3 v-if="presencePlatform === 'ios'">iPhone: настройка Shortcuts</h3>
-                <h3 v-else>Android: настройка Tasker</h3>
-
-                <ol class="presence-steps">
-                    <li>
-                        <div class="presence-step-title">Шаг 1. Сгенерируйте персональный токен</div>
-                        <div class="presence-step-body">
-                            <button type="button" class="apply-btn small" @click="handleIssuePresenceToken"
-                                :disabled="issuingPresenceToken">
-                                {{ issuingPresenceToken ? 'Генерируем…' : (presenceApiTokenCreatedAt ? 'Получить новый токен' : 'Сгенерировать токен') }}
-                            </button>
-                            <p v-if="presenceApiTokenCreatedAt" class="muted small">
-                                Токен уже сгенерирован. Чтобы увидеть новый токен, нажмите «Получить новый токен».
-                            </p>
-                            <p v-if="issuedPresenceToken" class="muted small">
-                                Новый токен (покажем один раз): <code class="token">{{ issuedPresenceToken }}</code>
-                            </p>
-                            <p v-if="presenceTokenError" class="error-message">{{ presenceTokenError }}</p>
-                        </div>
-                    </li>
-                    <li>
-                        <div class="presence-step-title">Шаг 2. Подготовьте два запроса: Home и Away</div>
-                        <div class="presence-step-body">
-                            <p class="muted small">
-                                В каждом запросе обязательно укажите <code>device</code> — любое понятное имя телефона/члена семьи (например <code>Misha</code>, <code>Katya</code>).
-                                Так сервер сможет учитывать несколько устройств и правильно считать <code>anyoneHome</code>.
-                            </p>
-                            <div class="presence-kv">
-                                <div class="label">URL</div>
-                                <code>{{ presenceEndpoint }}</code>
-                            </div>
-                            <div class="presence-kv">
-                                <div class="label">Header</div>
-                                <code>{{ presenceAuthHeader }}</code>
-                            </div>
-                            <div class="presence-kv">
-                                <div class="label">JSON (Home)</div>
-                                <pre class="presence-snippet"><code>{
-  "device": "Misha",
-  "status": "home"
-}</code></pre>
-                            </div>
-                            <div class="presence-kv">
-                                <div class="label">JSON (Away)</div>
-                                <pre class="presence-snippet"><code>{
-  "device": "Misha",
-  "status": "away"
-}</code></pre>
-                            </div>
-                        </div>
-                    </li>
-                    <li>
-                        <div class="presence-step-title">Шаг 3. Настройте автоматизации</div>
-                        <div class="presence-step-body" v-if="presencePlatform === 'ios'">
-                            <ol class="presence-substeps">
-                                <li>Откройте приложение <b>Команды</b> (Shortcuts).</li>
-                                <li>Перейдите на вкладку <b>Автоматизация</b>.</li>
-                                <li>Нажмите <b>+</b> → <b>Создать автоматизацию</b> → <b>Прибытие</b>.</li>
-                                <li>Выберите дом/адрес и действие <b>Прибыл</b>, нажмите <b>Далее</b>.</li>
-                                <li>Нажмите <b>Добавить действие</b> → найдите <b>Получить содержимое URL</b>.</li>
-                                <li>В действии выставьте:
-                                    <div class="presence-subkv"><span>Метод:</span> <code>POST</code></div>
-                                    <div class="presence-subkv"><span>URL:</span> <code>{{ presenceEndpoint }}</code></div>
-                                    <div class="presence-subkv"><span>Заголовок:</span> <code>{{ presenceAuthHeader }}</code></div>
-                                    <div class="presence-subkv"><span>Тело:</span> <code>JSON</code> и вставьте Home JSON из шага 2</div>
-                                </li>
-                                <li>Сохраните автоматизацию и включите “Выполнять немедленно” (если есть).</li>
-                                <li>Повторите шаги 3–6 для автоматизации <b>Уход</b> и используйте Away JSON.</li>
-                            </ol>
-                        </div>
-                        <div class="presence-step-body" v-else>
-                            <ol class="presence-substeps">
-                                <li>Откройте <b>Tasker</b> → вкладка <b>Profiles</b> → нажмите <b>+</b>.</li>
-                                <li>Выберите триггер геозоны (Location / Geofence) “Дом” → <b>Enter</b> (вход).</li>
-                                <li>Создайте <b>Task</b> → добавьте действие <b>Net → HTTP Request</b>.</li>
-                                <li>Заполните:
-                                    <div class="presence-subkv"><span>Method:</span> <code>POST</code></div>
-                                    <div class="presence-subkv"><span>URL:</span> <code>{{ presenceEndpoint }}</code></div>
-                                    <div class="presence-subkv"><span>Headers:</span> <code>{{ presenceAuthHeader }}</code></div>
-                                    <div class="presence-subkv"><span>Body (JSON):</span> вставьте Home JSON из шага 2</div>
-                                    <div class="presence-subkv"><span>Content-Type:</span> <code>application/json</code></div>
-                                </li>
-                                <li>Сохраните. Повторите для <b>Exit</b> (выход) и используйте Away JSON.</li>
-                            </ol>
-                        </div>
-                    </li>
-                    <li>
-                        <div class="presence-step-title">Шаг 4. Проверьте работу</div>
-                        <div class="presence-step-body">
-                            Запустите один раз Home и Away (вручную или через тестовую автоматизацию) и убедитесь, что ниже оба статуса стали «работает».
-                        </div>
-                    </li>
-                </ol>
+        <section v-if="instructions" class="panel presence-panel">
+            <div class="presence-header" @click="openPresenceSetupPage" :style="{ cursor: 'pointer' }">
+                <div class="presence-title-col">
+                    <h2>Присутствие</h2>
+                </div>
+                <div class="presence-status-col">
+                    <button v-if="!presenceConfigured" type="button" class="presence-status-badge"
+                        :class="{ configured: presenceConfigured }"
+                        @click.stop="openPresenceSetupPage">
+                        Настроить
+                    </button>
+                    <span v-else class="presence-status-badge" :class="{ configured: presenceConfigured }">
+                        настроено
+                    </span>
+                </div>
             </div>
 
-            <div class="presence-status">
-                <div class="presence-status-row">
-                    <span class="label">Home</span>
-                    <span class="presence-pill" :class="{ ok: presenceHomeReady }">{{ presenceStatusLabel(presenceHomeReady) }}</span>
+            <div v-if="presenceHomeReady || presenceAwayReady" class="presence-status-details">
+                <div v-if="presenceHomeReady" class="status-row">
+                    <span class="status-label">Home</span>
+                    <span class="presence-pill ok">{{ presenceStatusLabel(presenceHomeReady) }}</span>
                 </div>
-                <div class="presence-status-row">
-                    <span class="label">Away</span>
-                    <span class="presence-pill" :class="{ ok: presenceAwayReady }">{{ presenceStatusLabel(presenceAwayReady) }}</span>
+                <div v-if="presenceAwayReady" class="status-row">
+                    <span class="status-label">Away</span>
+                    <span class="presence-pill ok">{{ presenceStatusLabel(presenceAwayReady) }}</span>
                 </div>
-                <p v-if="!presenceHomeReady || !presenceAwayReady" class="muted small">
-                    Для включения сценариев по присутствию нужно, чтобы сервер получил хотя бы один раз обе команды: <code>home</code> и <code>away</code>.
-                </p>
             </div>
         </section>
 
-        <p v-if="profileLoadError" class="error-message block">
-            Не удалось загрузить профиль: {{ profileLoadError }}
-        </p>
+        <p v-if="profileLoadError" class="error-message block">Не удалось загрузить профиль: {{ profileLoadError }}</p>
 
         <footer class="profile-footer">
             <button type="button" class="primary-outline-button" @click="handleLogout" :disabled="logoutRunning">
@@ -609,7 +475,6 @@ async function handleDeleteProfile() {
                 {{ deletingProfile ? 'Удаляем…' : 'Удалить профиль' }}
             </button>
         </footer>
-
     </main>
 </template>
 
@@ -641,16 +506,82 @@ async function handleDeleteProfile() {
     color: var(--text-subtle);
 }
 
-.presence-platform {
-    margin: 10px 0 12px;
+.presence-header {
     display: flex;
-    justify-content: flex-start;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+}
+
+.presence-title-col h2 {
+    margin: 0;
+}
+
+.presence-status-col {
+    display: flex;
+    align-items: center;
+}
+
+.presence-status-badge {
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    color: rgba(226, 232, 240, 0.92);
+    background: rgba(148, 163, 184, 0.14);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.presence-status-badge[type="button"] {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.presence-status-badge[type="button"]:hover {
+    background: rgba(148, 163, 184, 0.25);
+    border-color: rgba(148, 163, 184, 0.4);
+}
+
+.presence-status-badge.configured {
+    background: rgba(34, 197, 94, 0.16);
+    border-color: rgba(34, 197, 94, 0.35);
+}
+
+.setup-link-button {
+    background: none;
+    border: none;
+    color: var(--primary);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0;
+    text-decoration: underline;
+}
+
+.setup-link-button:hover {
+    text-decoration-color: transparent;
+}
+
+.presence-status-details {
+    display: flex;
+    gap: 16px;
+    margin-top: 8px;
+}
+
+.status-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.status-label {
+    font-size: 13px;
+    color: var(--text-muted);
 }
 
 .presence-pill {
-    padding: 6px 10px;
+    padding: 4px 8px;
     border-radius: 999px;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 600;
     color: rgba(226, 232, 240, 0.92);
     background: rgba(148, 163, 184, 0.14);
@@ -660,84 +591,6 @@ async function handleDeleteProfile() {
 .presence-pill.ok {
     background: rgba(34, 197, 94, 0.16);
     border-color: rgba(34, 197, 94, 0.35);
-}
-
-.apply-btn.small {
-    padding: 8px 12px;
-    font-size: 13px;
-}
-
-code.token {
-    user-select: all;
-}
-
-.presence-steps {
-    margin: 10px 0 0;
-    padding-left: 18px;
-    display: grid;
-    gap: 10px;
-}
-
-.presence-step-title {
-    font-weight: 700;
-}
-
-.presence-step-body {
-    margin-top: 6px;
-    display: grid;
-    gap: 8px;
-}
-
-.presence-kv {
-    display: grid;
-    gap: 6px;
-}
-
-.presence-substeps {
-    margin: 6px 0 0;
-    padding-left: 18px;
-    display: grid;
-    gap: 8px;
-}
-
-.presence-subkv {
-    display: grid;
-    gap: 4px;
-    margin-top: 6px;
-}
-
-.presence-snippet {
-    margin: 8px 0 0;
-    padding: 10px 12px;
-    background: rgba(2, 6, 23, 0.7);
-    border: 1px solid rgba(148, 163, 184, 0.14);
-    border-radius: 12px;
-    overflow: auto;
-    font-size: 12px;
-}
-
-.presence-status {
-    display: grid;
-    gap: 8px;
-    margin: 12px 0 0;
-    padding: 12px;
-    border-radius: 14px;
-    background: rgba(15, 23, 42, 0.35);
-    border: 1px solid rgba(148, 163, 184, 0.12);
-}
-
-.presence-status-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-}
-
-
-.city-panel .label {
-    margin: 0;
-    font-size: 13px;
-    color: var(--text-muted);
 }
 
 .panel {
@@ -771,6 +624,11 @@ code.token {
 
 .primary-outline-button:hover:not(:disabled) {
     background: rgba(168, 85, 247, 0.12);
+}
+
+.primary-outline-button:disabled {
+    opacity: 0.5;
+    cursor: default;
 }
 
 .profile-footer {
@@ -814,7 +672,6 @@ code.token {
     margin: 4px 0 0;
     color: var(--text-muted);
 }
-
 
 .city-input-row {
     display: flex;
@@ -916,15 +773,10 @@ code.token {
     width: 100%;
 }
 
-.row-buttons {
-    display: none;
-}
-
-.candidate-block,
-.candidate-buttons,
-.candidate-button,
-.secondary-button {
-    display: none;
+.city-panel .label {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-muted);
 }
 
 @media (max-width: 640px) {
@@ -962,82 +814,8 @@ code.token {
     font-size: 12px;
 }
 
-.debug-line {
-    font-size: 12px;
-    margin-top: -6px;
-}
-
-.instruction-panel {
-    gap: 18px;
-}
-
-.instruction-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 12px;
-}
-
-.instruction-grid .label {
-    font-size: 12px;
-    text-transform: uppercase;
-    color: var(--text-muted);
-    margin-bottom: 4px;
-}
-
-.instruction-grid code {
-    display: block;
-    background: var(--surface-card);
-    color: var(--text-primary);
-    border-radius: 10px;
-    padding: 6px 10px;
-    font-size: 14px;
-}
-
-.instruction-block {
-    background: var(--surface-muted);
-    border-radius: var(--radius-lg);
-    padding: 12px 14px;
-    border: 1px solid var(--surface-border);
-}
-
-.instruction-block h3 {
-    margin: 0;
-    font-size: 16px;
-    color: var(--text-primary);
-}
-
-.instruction-block p {
-    margin: 6px 0 0;
-    color: var(--text-subtle);
-}
-
-.note {
-    color: #475569;
-    font-size: 14px;
-    margin: 0;
-}
-
 .block {
     margin-top: 8px;
-}
-
-@media (max-width: 720px) {
-    .timezone-select-row {
-        flex-direction: column;
-    }
-
-    .apply-btn {
-        width: 100%;
-    }
-
-    .timezone-list li {
-        flex-direction: column;
-        align-items: flex-start;
-    }
-
-    .instruction-grid {
-        grid-template-columns: 1fr;
-    }
 }
 
 @media (min-width: 431px) {

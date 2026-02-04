@@ -254,6 +254,7 @@
 ### `src/views/ScenariosListView.vue`
 - Fetches scenario list from `/list`, applies API keys, and normalizes entries with `summarizeStatusRecord` and `deriveScenarioListStatus`.
 - Provides creation button, toggles pause/resume, sorts scenarios alphabetically with disabled ones grouped last, and refreshes statuses every 30 seconds.
+- Tracks the non‑premium quota (max 3 active scenarios, max 10 unique devices) by expanding each entry through the cached catalog, allowing the special case where three scenarios can reuse a single large group, hiding the “Создать сценарий” button when limits are hit, and surfacing a small status line below the button with the current allowance or the reason the limit was reached.
 
 ### `src/views/ScenarioView.vue`
 - Master editor for `scenario-v1` (not auto-light) that stitches together the main dial interface, bottom sheets, and action footer.

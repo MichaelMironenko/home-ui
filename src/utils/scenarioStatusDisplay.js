@@ -16,71 +16,48 @@ const PAUSE_MANUAL_SOURCES = new Set(['manual', 'manual_pause', 'manual_override
 const PAUSE_MANUAL_IDENTIFIERS = new Set(['manual', 'manual_pause', 'manual_override', 'app_button_pause'])
 const PAUSE_AUTO_SOURCES = new Set(['autopause', 'presence', 'presence_guard', 'away', 'presence_away'])
 
-const CURRENT_WINDOW_KEYS = ['window', 'currentWindow', 'activeWindow']
-const NEXT_WINDOW_KEYS = ['nextWindow', 'upcomingWindow', 'next']
-
 export function summarizeStatusRecord(status) {
     if (!status || typeof status !== 'object') return null
-    const resultSource = status.result && typeof status.result === 'object' ? { ...status.result } : null
-    if (resultSource?.windowTimeline) {
-        const timeline = resultSource.windowTimeline
-        if (!resultSource.currentWindow && timeline.current) resultSource.currentWindow = timeline.current
-        if (!resultSource.nextWindow && timeline.next) resultSource.nextWindow = timeline.next
-        if (!resultSource.lastWindow && timeline.previous) resultSource.lastWindow = timeline.previous
-        if (!resultSource.lastEndedAt && timeline.previous?.end) resultSource.lastEndedAt = timeline.previous.end
-        if (!resultSource.nextStartAt && timeline.next?.start) resultSource.nextStartAt = timeline.next.start
-    }
-    if (resultSource && !resultSource.lastEndedAt) {
-        resultSource.lastEndedAt =
-            status.result.lastEndedAt ||
-            status.result.lastWindowEnd ||
-            status.result.windowEnd ||
-            status.result.endAt ||
-            status.result.completedAt ||
-            null
-    }
-    if (resultSource && !resultSource.nextStartAt) {
-        resultSource.nextStartAt =
-            status.result.nextStartAt ||
-            status.result.nextWindowStart ||
-            status.result.startAt ||
-            status.result.nextRunUtc ||
-            status.result.nextWindow?.start ||
-            status.result.next?.start ||
-            null
-    }
-    const summary = {
+    const normalizedResult = status.result ? normalizeScenarioResult(status.result) : null
+    return {
         ts: parseTimestamp(status.ts),
         origin: status.origin || null,
-        result: null,
-        error: status.error || null
+        result: normalizedResult,
+        error: status.error || null,
+        pause: status.pause || null
     }
-    if (resultSource && typeof resultSource === 'object') {
-        summary.result = {
-            active: !!resultSource.active,
-            reason: resultSource.reason || null,
-            actionsSent: Number.isFinite(Number(resultSource.actionsSent)) ? Number(resultSource.actionsSent) : null,
-            tz: resultSource.tz || resultSource.timeZone || null,
-            currentWindow: findWindow(resultSource, CURRENT_WINDOW_KEYS),
-            nextWindow: findWindow(resultSource, NEXT_WINDOW_KEYS),
-            lastWindow: findWindow(resultSource, ['lastWindow', 'previousWindow']),
-            lastEndedAt: parseTimestamp(
-                resultSource.lastEndedAt ||
-                    resultSource.completedAt ||
-                    resultSource.lastWindow?.end ||
-                    resultSource.windowTimeline?.previous?.end
-            ),
-            nextStartAt: parseTimestamp(
-                resultSource.nextStartAt ||
-                    resultSource.nextStart ||
-                    resultSource.nextWindowStart ||
-                    resultSource.startAt ||
-                    resultSource.upcomingStart ||
-                    resultSource.nextRunUtc
-            )
-        }
+}
+
+function normalizeScenarioResult(rawResult = {}) {
+    const currentWindow = normalizeWindow(rawResult.currentWindow)
+    const nextWindow = normalizeWindow(rawResult.nextWindow)
+    const lastWindow = normalizeWindow(rawResult.lastWindow)
+
+    const lastEndedAt = pickTimestamp([
+        rawResult.lastEndedAt,
+        rawResult.lastWindow?.end,
+        lastWindow?.end,
+        rawResult.completedAt
+    ])
+
+    const nextStartAt = pickTimestamp([
+        rawResult.nextStartAt,
+        rawResult.nextWindow?.start,
+        nextWindow?.start,
+        rawResult.nextRunUtc
+    ])
+
+    return {
+        active: Boolean(rawResult.active),
+        reason: rawResult.reason || null,
+        actionsSent: Number.isFinite(Number(rawResult.actionsSent)) ? Number(rawResult.actionsSent) : null,
+        tz: rawResult.tz || rawResult.timeZone || null,
+        currentWindow,
+        nextWindow,
+        lastWindow,
+        lastEndedAt,
+        nextStartAt
     }
-    return summary
 }
 
 function resolveActiveWindow(result, now) {
@@ -94,37 +71,60 @@ export function deriveScenarioListStatus(item, nowInput = Date.now()) {
     const now = typeof nowInput === 'number' ? nowInput : parseTimestamp(nowInput) || Date.now()
     if (!item) return buildStatus('waiting', 'Завершен')
     if (item.disabled) return buildStatus('off', 'Выключен')
-    const status = item.status
-    const result = status?.result
-    const statusReason = result?.reason || null
-    const pauseReason = item.pause?.reason
-    const reasonCandidate = pauseReason?.source || statusReason || ''
-    const reasonNormalized = String(reasonCandidate).toLowerCase()
-    const hasPausePayload =
-        Boolean(item.pause) || statusReason === 'app_button_pause' || statusReason === 'autopause'
-    const manualPause = PAUSE_MANUAL_IDENTIFIERS.has(reasonNormalized)
+    const ctx = buildScenarioContext(item, now)
+    const state = resolveScenarioState(ctx)
+    return buildStatus(state.kind, state.label)
+}
+
+function buildScenarioContext(item, now) {
+    const result = item?.status?.result || null
     const activeWindow = resolveActiveWindow(result, now)
-    const hasActiveWindow = Boolean(activeWindow)
-    const hasWindowData = !!(result?.currentWindow || result?.nextWindow || result?.lastWindow)
-    const autoPause = PAUSE_AUTO_SOURCES.has(reasonNormalized)
-    const autopauseActive = autoPause && (hasWindowData ? hasActiveWindow : true)
-    const shouldShowPause = hasPausePayload && (manualPause || autopauseActive)
-    if (shouldShowPause) {
-        const reason = resolvePauseReason(item.pause, item.status)
-        const label = reason ? `Пауза · ${reason}` : 'Пауза'
-        return buildStatus('paused', label)
-    }
+    const hasWindowData = Boolean(result?.currentWindow || result?.nextWindow || result?.lastWindow)
+    const currentWindowActive = isWindowActive(result?.currentWindow, now)
     const actionsSent = Number.isFinite(Number(result?.actionsSent)) ? Number(result.actionsSent) : 0
     const fallbackActive = !hasWindowData && actionsSent > 0
-    if (activeWindow || (result?.active && (isWindowActive(result?.currentWindow, now) || fallbackActive))) {
-        return buildStatus('running', 'Работает')
+    const running = Boolean(
+        activeWindow || (result?.active && (currentWindowActive || fallbackActive))
+    )
+    return {
+        disabled: Boolean(item.disabled),
+        pause: getPauseInfo({ pause: item.pause, status: item.status }, result, activeWindow, hasWindowData),
+        running,
+        waitingLabel: buildWaitingLabel(result, now)
+    }
+}
+
+function resolveScenarioState(ctx) {
+    if (ctx.disabled) return { kind: 'off', label: 'Выключен' }
+    if (ctx.pause) return { kind: 'paused', label: ctx.pause.label }
+    if (ctx.running) return { kind: 'running', label: 'Работает' }
+    if (ctx.waitingLabel) return { kind: 'waiting', label: ctx.waitingLabel }
+    return { kind: 'waiting', label: 'Завершен' }
+}
+
+function getPauseInfo(pausePayload, result, activeWindow, hasWindowData) {
+    const { pause, status } = pausePayload || {}
+    const statusReason = status?.result?.reason
+    const pauseReason = pause?.reason
+    const sourceCandidate = pauseReason?.source || statusReason || ''
+    const normalizedSource = sourceCandidate ? String(sourceCandidate).toLowerCase() : ''
+    const hasPausePayload = Boolean(pause) || statusReason === 'app_button_pause' || statusReason === 'autopause'
+    if (!hasPausePayload) return null
+
+    if (PAUSE_MANUAL_IDENTIFIERS.has(normalizedSource)) {
+        const label = resolvePauseReason(pause, status)
+        return { label: label ? `Пауза · ${label}` : 'Пауза' }
     }
 
-    const waitingLabel = buildWaitingLabel(result, now)
-    if (waitingLabel) {
-        return buildStatus('waiting', waitingLabel)
+    if (PAUSE_AUTO_SOURCES.has(normalizedSource)) {
+        const autopauseActive = hasWindowData ? Boolean(activeWindow) : true
+        if (autopauseActive) {
+            const label = resolvePauseReason(pause, status)
+            return { label: label ? `Пауза · ${label}` : 'Пауза' }
+        }
     }
-    return buildStatus('waiting', 'Завершен')
+
+    return null
 }
 
 function buildWaitingLabel(result, now) {
@@ -225,24 +225,12 @@ export function resolvePauseReason(pause, status) {
     return ''
 }
 
-function findWindow(result, keys) {
-    if (!result || typeof result !== 'object') return null
-    for (const key of keys) {
-        const windowCandidate = result[key]
-        if (windowCandidate && typeof windowCandidate === 'object') {
-            const normalized = normalizeWindow(windowCandidate)
-            if (normalized) return normalized
-        }
-    }
-    return null
-}
-
 function normalizeWindow(source) {
     if (!source || typeof source !== 'object') return null
     const start = parseTimestamp(source.start || source.from || source.begin || source.openAt)
     const end = parseTimestamp(source.end || source.to || source.finish || source.closeAt)
     if (!Number.isFinite(start) && !Number.isFinite(end)) return null
-    return { start: Number.isFinite(start) ? start : null, end: Number.isFinite(end) ? end : null }
+    return { start: Number.isFinite(start) ? start : null, end: Number.isFinite(end) ? end : null, tz: source.tz || source.timezone || null }
 }
 
 function parseTimestamp(value) {
@@ -287,6 +275,9 @@ export function __testables__() {
         buildCountdownPhrase,
         resolvePauseReason,
         parseTimestamp,
-        pickTimestamp
+        pickTimestamp,
+        normalizeScenarioResult,
+        resolveScenarioState,
+        getPauseInfo
     }
 }

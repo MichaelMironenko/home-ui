@@ -16,6 +16,7 @@ const LoginView = () => import('./views/LoginView.vue')
 const ConsentView = () => import('./views/ConsentView.vue')
 const UserAgreementView = () => import('./views/UserAgreementView.vue')
 const ProfileView = () => import('./views/ProfileView.vue')
+const PresenceSetupView = () => import('./views/PresenceSetupView.vue')
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -28,6 +29,7 @@ const router = createRouter({
     { path: '/auto-light/new', name: 'auto-light-create', component: AutoLightScenarioView },
     { path: '/auto-light/:id', name: 'auto-light-edit', component: AutoLightScenarioView, props: true },
     { path: '/profile', name: 'profile', component: ProfileView },
+    { path: '/presence-setup', name: 'presence-setup', component: PresenceSetupView },
     { path: '/events', name: 'events', component: EventsView },
     { path: '/agreement', name: 'agreement', component: UserAgreementView, meta: { public: true } },
     { path: '/consent', name: 'consent', component: ConsentView, meta: { public: true } },

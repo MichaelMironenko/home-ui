@@ -38,6 +38,42 @@ function parseBrightness(event) {
     return null
 }
 
+const SENSOR_REASON_LABELS = {
+    above: 'выкл',
+    below: 'вкл'
+}
+
+function parseSensorLux(event) {
+    const raw = event.sensorLux ?? event.sensor_lux
+    const numeric = Number(raw)
+    if (Number.isFinite(numeric)) return Math.round(numeric)
+    return null
+}
+
+function parseSensorOffReason(event) {
+    const raw = typeof event.sensorOffReason === 'string'
+        ? event.sensorOffReason
+        : typeof event.sensor_off_reason === 'string'
+            ? event.sensor_off_reason
+            : ''
+    return raw
+}
+
+function formatSensorStatusLabel(lux, reason) {
+    const parts = []
+    if (Number.isFinite(lux)) {
+        parts.push(`${lux} lx`)
+    }
+    const mappedReason = SENSOR_REASON_LABELS[reason]
+    if (mappedReason) {
+        parts.push(mappedReason)
+    }
+    if (parts.length) {
+        return parts.join(' ')
+    }
+    return 'Выключено по датчику'
+}
+
 function resolveStatusKind(event) {
     if (event.sensorOff || event.sensor_off) return 'sensor-off'
     const label = typeof event.statusLabel === 'string' ? event.statusLabel : ''
@@ -78,7 +114,8 @@ export function normalizeScenarioEvents(events = [], { fallbackColor = '#a855f7'
     for (const event of events) {
         if (!event || typeof event !== 'object') continue
         const brightness = parseBrightness(event)
-        if (brightness != null) {
+        const isSensorOff = Boolean(event.sensorOff || event.sensor_off)
+        if (brightness != null && !isSensorOff) {
             lastBrightness = brightness
         }
         const colorTemperature =
@@ -91,19 +128,23 @@ export function normalizeScenarioEvents(events = [], { fallbackColor = '#a855f7'
             event.colorHexDisplay || (colorTemperature ? temperatureToHex(colorTemperature) : null) || lastColor
         if (color) lastColor = color
         const statusKind = resolveStatusKind(event)
+        const sensorLux = parseSensorLux(event)
+        const sensorOffReason = parseSensorOffReason(event)
         const statusLabel =
             event.statusLabel ||
-            (statusKind === 'sensor-off' ? 'Выключено по датчику' : '')
+            (statusKind === 'sensor-off' ? formatSensorStatusLabel(sensorLux, sensorOffReason) : '')
         normalized.push({
             id: event.id || `evt_${event.ts || event.timestamp || Date.now()}`,
             timestamp: parseTimestamp(event),
-            brightness: lastBrightness,
-            hasBrightness: Number.isFinite(lastBrightness),
+            brightness: isSensorOff ? null : lastBrightness,
+            hasBrightness: Number.isFinite(isSensorOff ? null : lastBrightness),
             color,
             colorTemperature,
             statusKind,
             statusLabel,
-            sensorOff: Boolean(event.sensorOff),
+            sensorLux,
+            sensorOffReason,
+            sensorOff: isSensorOff,
             origin: typeof event.origin === 'string' ? event.origin : '',
             timeText: formatTime(event.timestamp)
         })

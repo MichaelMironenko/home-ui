@@ -27,6 +27,123 @@ const {
     togglePause
 } = useScenarioList({ scenariosRequest, cfg, error })
 
+const NON_PREMIUM_SCENARIO_LIMIT = 3
+const NON_PREMIUM_DEVICE_LIMIT = 10
+
+const activeScenarios = computed(() => sortedScenarios.value.filter((entry) => !entry.disabled))
+
+const catalogGroupDevices = computed(() => {
+    const map = new Map()
+    catalogGroups.value.forEach((group) => {
+        if (!group?.id) return
+        const entries = Array.isArray(group.devices)
+            ? group.devices
+                .map((deviceId) => String(deviceId || '').trim())
+                .filter(Boolean)
+            : []
+        map.set(group.id, entries)
+    })
+    return map
+})
+
+function expandScenarioDevices(entry, groupMap) {
+    const ids = new Set()
+    const addDevice = (value) => {
+        const normalized = String(value || '').trim()
+        if (normalized) ids.add(normalized)
+    }
+    const explicitDevices = Array.isArray(entry?.targetDevices) ? entry.targetDevices : []
+    explicitDevices.forEach(addDevice)
+    const groups = Array.isArray(entry?.targetGroups) ? entry.targetGroups : []
+    groups.forEach((groupId) => {
+        const normalizedGroup = String(groupId || '').trim()
+        if (!normalizedGroup) return
+        const members = groupMap.get(normalizedGroup) || []
+        members.forEach(addDevice)
+    })
+    return ids
+}
+
+const totalUniqueDevices = computed(() => {
+    const union = new Set()
+    const groupMap = catalogGroupDevices.value
+    activeScenarios.value.forEach((entry) => {
+        const ids = expandScenarioDevices(entry, groupMap)
+        ids.forEach((id) => union.add(id))
+    })
+    return union
+})
+
+const sharedGroupIds = computed(() => {
+    const groupSets = activeScenarios.value
+        .map((entry) => {
+            const list = Array.isArray(entry.targetGroups) ? entry.targetGroups : []
+            return new Set(list.map((groupId) => String(groupId || '').trim()).filter(Boolean))
+        })
+        .filter((set) => set.size)
+    if (!groupSets.length) return []
+    let intersection = new Set(groupSets[0])
+    for (let i = 1; i < groupSets.length; i += 1) {
+        intersection = new Set([...intersection].filter((groupId) => groupSets[i].has(groupId)))
+        if (!intersection.size) break
+    }
+    return [...intersection]
+})
+
+const hasSharedGroupExemption = computed(() => {
+    const total = totalUniqueDevices.value.size
+    if (total <= NON_PREMIUM_DEVICE_LIMIT) return false
+    const groupMap = catalogGroupDevices.value
+    for (const groupId of sharedGroupIds.value) {
+        const devices = groupMap.get(groupId) || []
+        const normalized = new Set(devices)
+        if (normalized.size <= NON_PREMIUM_DEVICE_LIMIT) continue
+        if (normalized.size !== total) continue
+        const allIncluded = [...normalized].every((deviceId) => totalUniqueDevices.value.has(deviceId))
+        if (!allIncluded) continue
+        return true
+    }
+    return false
+})
+
+const scenarioLimitReached = computed(
+    () => activeScenarios.value.length >= NON_PREMIUM_SCENARIO_LIMIT
+)
+
+const deviceLimitExceeded = computed(
+    () => totalUniqueDevices.value.size > NON_PREMIUM_DEVICE_LIMIT && !hasSharedGroupExemption.value
+)
+
+const remainingScenarios = computed(() =>
+    Math.max(NON_PREMIUM_SCENARIO_LIMIT - activeScenarios.value.length, 0)
+)
+
+const remainingDevices = computed(() => {
+    const used = totalUniqueDevices.value.size
+    const capped = Math.min(used, NON_PREMIUM_DEVICE_LIMIT)
+    return Math.max(NON_PREMIUM_DEVICE_LIMIT - capped, 0)
+})
+
+function pluralize(value, forms) {
+    const normalized = Math.abs(value) % 100
+    if (normalized >= 11 && normalized <= 14) return forms[2]
+    const lastDigit = normalized % 10
+    if (lastDigit === 1) return forms[0]
+    if (lastDigit >= 2 && lastDigit <= 4) return forms[1]
+    return forms[2]
+}
+
+const canCreateScenario = computed(
+    () => !scenarioLimitReached.value && !deviceLimitExceeded.value
+)
+
+const creationStatusText = computed(() => {
+    if (scenarioLimitReached.value) return 'Достигнут лимит сценариев'
+    if (deviceLimitExceeded.value) return 'Достигнут лимит устройств'
+    return `Доступно: ${remainingScenarios.value} ${pluralize(remainingScenarios.value, ['сценарий', 'сценария', 'сценариев'])}, `
+        + `${remainingDevices.value} ${pluralize(remainingDevices.value, ['устройство', 'устройства', 'устройств'])}`
+})
+
 const {
     dial,
     environment,
@@ -189,7 +306,9 @@ onUnmounted(() => {
             <ScenarioListSection :scenarios="sortedScenarios" :has-scenarios="hasScenarios"
                 :active-scenario-id="activeScenarioId" :toggling="toggling"
                 :scenario-status-display="scenarioStatusDisplay" :scenario-key="scenarioKey"
-                :scenario-card-id="scenarioCardId" @toggle-pause="togglePause" @hover="activateScenario"
+                :scenario-card-id="scenarioCardId" :can-create-scenario="canCreateScenario"
+                :creation-status-text="creationStatusText"
+                @toggle-pause="togglePause" @hover="activateScenario"
                 @hover-clear="deactivateScenario" />
         </section>
     </main>

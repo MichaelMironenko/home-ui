@@ -143,6 +143,10 @@ function finishEditingName() {
     if (!scenario.name) scenario.name = 'Новый сценарий'
 }
 
+function startEditing() {
+    editingName.value = true
+}
+
 const selectedDays = computed(() => {
     const days = scenario.time?.days
     if (Array.isArray(days) && days.length) return days
@@ -197,7 +201,22 @@ function applyScheduleChanges() {
     closeModal()
 }
 
-const colorPalette = ['#ffd89c', '#ffb4a2', '#f472b6', '#c084fc', '#60a5fa', '#34d399', '#fef08a', '#f97316']
+const colorPalette = [
+    '#FF0A0A',
+    '#FF6200',
+    '#FFB900',
+    '#FFF200',
+    '#D6FF00',
+    '#00FF10',
+    '#00C8B8',
+    '#0090FF',
+    '#0A0AFF',
+    '#4B00FF',
+    '#B000FF',
+    '#FF00D0',
+    '#FFF5D0',
+    '#FFFFFF'
+]
 
 const startStop = createStopState({
     clockMinutes: 6 * 60 + 30,
@@ -925,6 +944,7 @@ async function saveScenario() {
         scenarioMessage.value = ''
         return
     }
+    const keepDisabledAfterSave = scenarioDisabled.value
     scenarioSaving.value = true
     scenarioError.value = ''
     scenarioMessage.value = ''
@@ -933,6 +953,9 @@ async function saveScenario() {
         console.info('[ScenarioView] sending scenario payload', payload)
         const response = await scenarioRequest('/scenario/save', { method: 'POST', body: { scenario: payload } })
         if (response?.scenario) {
+            if (keepDisabledAfterSave) {
+                response.scenario.disabled = true
+            }
             Object.assign(scenario, createDefaultScenario(), response.scenario)
             normalizeScenarioStruct(scenario)
             scenario.id = response.scenario.id || scenario.id
@@ -1113,12 +1136,6 @@ function sanitizeSelectionSets() {
     let changed = nextGroups.size !== selectedGroupIds.value.size || nextDevices.size !== selectedDevicesIds.value.size
 
     if (applyGroupMembersToDevices(nextDevices, nextGroups)) {
-        changed = true
-    }
-
-    if (!selectionDirty.value && !nextGroups.size && !nextDevices.size && availableLamps.value.length) {
-        const defaults = availableLamps.value.slice(0, 2).map((item) => item.id)
-        defaults.forEach((id) => nextDevices.add(id))
         changed = true
     }
 
@@ -1511,13 +1528,27 @@ function handleResumeFromDial() {
         <template v-else>
             <div class="title-row">
                 <div class="scenario-name-wrap">
-                    <input v-if="editingName" ref="nameInputRef" v-model="scenarioNameValue" maxlength="30"
-                        class="scenario-name-input" type="text" placeholder="Название сценария"
-                        @blur="finishEditingName" @keyup.enter="finishEditingName" />
-                    <button v-else :class="['scenario-name-display', { placeholder: !scenarioNameValue }]" type="button"
-                        @click="editingName = true">
-                        {{ scenarioNameUiLabel }}
-                    </button>
+                    <template v-if="editingName">
+                        <input ref="nameInputRef" v-model="scenarioNameValue" maxlength="30" class="scenario-name-input"
+                            type="text" placeholder="Название сценария" @blur="finishEditingName"
+                            @keyup.enter="finishEditingName" />
+                    </template>
+                    <template v-else>
+                        <div class="scenario-name-display-row">
+                            <button :class="['scenario-name-display', { placeholder: !scenarioNameValue }]"
+                                type="button" @click="startEditing">
+                                {{ scenarioNameUiLabel }}
+                            </button>
+                            <button class="scenario-name-icon-btn" type="button" aria-label="Редактировать название"
+                                @click="startEditing">
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                    <path
+                                        d="M17.71 4.04a1 1 0 0 0-1.42 0l-1.82 1.82 3.75 3.75 1.82-1.82a1 1 0 0 0 0-1.42L17.71 4.04zM5 17.25V20h2.75L17.81 9.94l-3.75-3.75L5 17.25z"
+                                        fill="currentColor" />
+                                </svg>
+                            </button>
+                        </div>
+                    </template>
                 </div>
                 <div class="status-text" :style="{ color: scenarioStatusColor }">
                     <span>{{ isCreateMode ? 'Новый сценарий (не сохранен)' : scenarioStatusText }}</span>
@@ -1694,6 +1725,31 @@ function handleResumeFromDial() {
     max-width: 30ch;
 }
 
+.scenario-name-display-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: nowrap;
+}
+
+.scenario-name-icon-btn {
+    border: none;
+    background: transparent;
+    padding: 4px;
+    color: #f8fafc;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.scenario-name-icon-btn svg {
+    width: 20px;
+    height: 20px;
+    display: block;
+}
+
 @media (max-width: 600px) {
     .title-row {
         display: grid;
@@ -1743,7 +1799,7 @@ function handleResumeFromDial() {
 }
 
 .scenario-name-display {
-    width: 100%;
+    min-width: 0;
     background: transparent;
     border: none;
     padding: 0;
@@ -1753,6 +1809,9 @@ function handleResumeFromDial() {
     font-size: 16px;
     font-weight: 600;
     color: #f8fafc;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .scenario-name-display.placeholder {
@@ -1808,7 +1867,6 @@ function handleResumeFromDial() {
 .scenario-dial-page.scenario-disabled .dial-layout {
     filter: grayscale(0.4) brightness(0.82);
     opacity: 0.88;
-    pointer-events: none;
 }
 
 .dial-column {
@@ -1943,7 +2001,7 @@ function handleResumeFromDial() {
         min-width: 250px;
     }
 
-.scenario-actions-footer {
+    .scenario-actions-footer {
         margin-top: auto;
     }
 }

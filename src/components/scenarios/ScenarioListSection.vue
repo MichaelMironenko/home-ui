@@ -1,5 +1,55 @@
 <script setup>
 import { useRouter } from 'vue-router'
+import { computeEnvironment } from '../../utils/scenarioUtils'
+
+const MINUTES_PER_DAY = 1440
+const DEFAULT_START_MINUTES = 18 * 60
+const DEFAULT_END_MINUTES = 23 * 60
+
+function parseClockMinutes(value) {
+    if (typeof value !== 'string') return null
+    const [hh, mm] = value.split(':').map((part) => Number(part))
+    if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null
+    return ((hh * 60 + mm) % MINUTES_PER_DAY + MINUTES_PER_DAY) % MINUTES_PER_DAY
+}
+
+function boundaryToMinutes(boundary, env, fallbackMinutes) {
+    if (!boundary || typeof boundary !== 'object') return fallbackMinutes
+    if (boundary.type === 'clock' || boundary.time) {
+        const parsed = parseClockMinutes(boundary.time)
+        return parsed != null ? parsed : fallbackMinutes
+    }
+    if (boundary.type === 'sun' || boundary.anchor === 'sunrise' || boundary.anchor === 'sunset') {
+        const anchor = boundary.anchor || (boundary.type === 'sunrise' ? 'sunrise' : 'sunset')
+        const base = anchor === 'sunrise' ? env.sunriseMin : env.sunsetMin
+        const offset = Number.isFinite(boundary.offsetMin) ? boundary.offsetMin : Number(boundary.offset) || 0
+        return ((base + offset) % MINUTES_PER_DAY + MINUTES_PER_DAY) % MINUTES_PER_DAY
+    }
+    if (boundary.type === 'sunrise' || boundary.type === 'sunset') {
+        const base = boundary.type === 'sunrise' ? env.sunriseMin : env.sunsetMin
+        const offset = Number.isFinite(boundary.offsetMin) ? boundary.offsetMin : Number(boundary.offset) || 0
+        return ((base + offset) % MINUTES_PER_DAY + MINUTES_PER_DAY) % MINUTES_PER_DAY
+    }
+    return fallbackMinutes
+}
+
+function formatClockMinutes(value) {
+    if (!Number.isFinite(value)) return ''
+    const normalized = ((value % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY
+    const hours = Math.floor(normalized / 60)
+    const minutes = normalized % 60
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+}
+
+function scenarioTimeRange(item) {
+    const time = item?.time
+    if (!time) return ''
+    const env = item?.env || computeEnvironment(time)
+    const start = boundaryToMinutes(time.start, env, DEFAULT_START_MINUTES)
+    const end = boundaryToMinutes(time.end, env, DEFAULT_END_MINUTES)
+    if (start == null || end == null) return ''
+    return `${formatClockMinutes(start)}–${formatClockMinutes(end)}`
+}
 
 const props = defineProps({
     scenarios: {
@@ -29,6 +79,15 @@ const props = defineProps({
     scenarioCardId: {
         type: Function,
         required: true
+    }
+    ,
+    canCreateScenario: {
+        type: Boolean,
+        default: true
+    },
+    creationStatusText: {
+        type: String,
+        default: 'Доступно 3 сценария, не более чем 10 устройств в сумме'
     }
 })
 
@@ -106,19 +165,17 @@ function canTogglePause(item) {
                 <li>Задайте временное окно и условия запуска.</li>
                 <li>Сохраните и протестируйте сценарий прямо из редактора.</li>
             </ul>
-            <article class="scenario-card create-card">
-                <button class="create-card-button" type="button" @click="createScenario">
-                    + Создать сценарий
-                </button>
-            </article>
         </article>
 
-        <template v-else>
-            <article class="scenario-card create-card">
-                <button class="create-card-button" type="button" @click="createScenario">
-                    + Создать сценарий
-                </button>
-            </article>
+        <div class="create-row">
+            <button v-if="canCreateScenario" class="create-card-button create-card-look" type="button"
+                @click="createScenario">
+                + Создать сценарий
+            </button>
+        </div>
+        <p class="create-card-status">{{ creationStatusText }}</p>
+
+        <template v-if="hasScenarios">
             <article v-for="item in scenarios" :key="item.id || item.key || item.name" class="scenario-card" :class="{
                 paused: isPaused(item),
                 disabled: item.disabled,
@@ -131,14 +188,18 @@ function canTogglePause(item) {
                 <header class="card__header">
                     <div class="card__title">
                         <h2>{{ item.name }}</h2>
-                        <p class="status" :class="`status--${scenarioStatusDisplay(item).kind}`">
-                            <span>{{ scenarioStatusDisplay(item).label }}</span>
-                        </p>
+                        <div class="card__meta">
+                            <p v-if="scenarioTimeRange(item)" class="card__time-range">
+                                {{ scenarioTimeRange(item) }}
+                            </p>
+                            <p class="status" :class="`status--${scenarioStatusDisplay(item).kind}`">
+                                <span>{{ scenarioStatusDisplay(item).label }}</span>
+                            </p>
+                        </div>
                     </div>
                     <button v-if="canTogglePause(item)" type="button" class="card-pause"
                         :disabled="toggling[item.id] || item.disabled"
-                        :aria-label="isPaused(item) ? 'Возобновить' : 'Пауза'"
-                        @click.stop="emit('toggle-pause', item)">
+                        :aria-label="isPaused(item) ? 'Возобновить' : 'Пауза'" @click.stop="emit('toggle-pause', item)">
                         <span v-if="isPaused(item)">▶</span>
                         <span v-else>⏸</span>
                     </button>
@@ -216,8 +277,24 @@ function canTogglePause(item) {
     color: var(--text-primary);
 }
 
+.card__meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+}
+
+.card__time-range {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+
 .status {
-    margin: 4px 0 0;
+    margin: 0;
     font-size: 13px;
     color: var(--primary);
     display: inline-flex;
@@ -271,14 +348,8 @@ function canTogglePause(item) {
     cursor: pointer;
 }
 
-.create-card {
-    border-style: dashed;
-    background: rgba(15, 23, 42, 0.45);
-}
-
 .create-card-button {
-    width: 100%;
-    padding: 0;
+    padding: 6px 24px;
     border-radius: 12px;
     border: none;
     background: transparent;
@@ -286,6 +357,36 @@ function canTogglePause(item) {
     font-size: 16px;
     font-weight: 600;
     cursor: pointer;
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    gap: 6px;
+    min-width: 150px;
+}
+
+.create-card-status {
+    margin: 0;
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.4;
+    text-align: center;
+}
+
+.create-row {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 4px;
+}
+
+.create-card-look {
+    width: 100%;
+    border-radius: 16px;
+    border: 1px dashed rgba(148, 163, 184, 0.4);
+    background: rgba(15, 23, 42, 0.45);
+    padding: 16px 0;
+    box-shadow: none;
+    font-size: 16px;
+    font-weight: 600;
 }
 
 .card-pause:disabled {

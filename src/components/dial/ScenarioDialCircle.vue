@@ -1007,39 +1007,9 @@ function minutesToTimeString(minute) {
                 <div class="time-chip-value">
                     <div class="time-chip-main" :class="{ offset: startLabel.isSun }">
                         <strong class="time-chip-time">{{ startLabel.time }}</strong>
-                        <!--
-                        <span v-if="startLabel.isSun" class="time-chip-sun" aria-hidden="true">
-                            <svg v-if="startLabel.anchor === 'sunrise'" viewBox="0 0 32 32" class="sun-icon"
-                                aria-hidden="true">
-                                <g class="sun-core">
-                                    <path d="M6 18h20" />
-                                    <path d="M9 18a7 7 0 0 1 14 0" />
-                                </g>
-                                <g class="sun-rays">
-                                    <path d="M16 6v4M10 8l2 3M22 8l-2 3" />
-                                </g>
-                                <g class="sun-arrow" transform="translate(0 3)">
-                                    <path d="M16 27v-7" />
-                                    <path d="M12.5 21.5L16 18l3.5 3.5" />
-                                </g>
-                            </svg>
-                            <svg v-else viewBox="0 0 32 32" class="sun-icon" aria-hidden="true">
-                                <g class="sun-core">
-                                    <path d="M6 18h20" />
-                                    <path d="M9 18a7 7 0 0 1 14 0" />
-                                </g>
-                                <g class="sun-rays">
-                                    <path d="M16 6v4M10 8l2 3M22 8l-2 3" />
-                                </g>
-                                <g class="sun-arrow" transform="translate(0 3)">
-                                    <path d="M16 21v7" />
-                                    <path d="M12.5 26.5L16 30l3.5-3.5" />
-                                </g>
-                            </svg>
-                        </span>
-                        -->
+
                     </div>
-                    <span v-if="startLabel.meta" class="time-chip-meta" :class="{ sun: startLabel.isOffset }">{{
+                    <span v-if="startLabel.meta" class="time-chip-meta">{{
                         startLabel.meta }}</span>
                 </div>
             </button>
@@ -1048,39 +1018,9 @@ function minutesToTimeString(minute) {
                 <div class="time-chip-value">
                     <div class="time-chip-main" :class="{ offset: endLabel.isSun }">
                         <strong class="time-chip-time">{{ endLabel.time }}</strong>
-                        <!--
-                        <span v-if="endLabel.isSun" class="time-chip-sun" aria-hidden="true">
-                            <svg v-if="endLabel.anchor === 'sunrise'" viewBox="0 0 32 32" class="sun-icon"
-                                aria-hidden="true">
-                                <g class="sun-core">
-                                    <path d="M6 18h20" />
-                                    <path d="M9 18a7 7 0 0 1 14 0" />
-                                </g>
-                                <g class="sun-rays">
-                                    <path d="M16 6v4M10 8l2 3M22 8l-2 3" />
-                                </g>
-                                <g class="sun-arrow" transform="translate(0 1.5)">
-                                    <path d="M16 27v-7" />
-                                    <path d="M12.5 21.5L16 18l3.5 3.5" />
-                                </g>
-                            </svg>
-                            <svg v-else viewBox="0 0 32 32" class="sun-icon" aria-hidden="true">
-                                <g class="sun-core">
-                                    <path d="M6 18h20" />
-                                    <path d="M9 18a7 7 0 0 1 14 0" />
-                                </g>
-                                <g class="sun-rays">
-                                    <path d="M16 6v4M10 8l2 3M22 8l-2 3" />
-                                </g>
-                                <g class="sun-arrow" transform="translate(0 1.5)">
-                                    <path d="M16 21v7" />
-                                    <path d="M12.5 26.5L16 30l3.5-3.5" />
-                                </g>
-                            </svg>
-                        </span>
-                        -->
+
                     </div>
-                    <span v-if="endLabel.meta" class="time-chip-meta" :class="{ sun: endLabel.isOffset }">{{
+                    <span v-if="endLabel.meta" class="time-chip-meta">{{
                         endLabel.meta }}</span>
                 </div>
             </button>
@@ -1274,10 +1214,6 @@ function minutesToTimeString(minute) {
     font-size: 12px;
     color: var(--text-muted);
     font-weight: 500;
-}
-
-.time-chip-meta.sun {
-    color: #f9c316;
 }
 
 .dial {

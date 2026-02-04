@@ -38,7 +38,9 @@ export async function callPresence(status, device = 'UI') {
   const c = await getConfig();
   const headers = { 'Content-Type': 'application/json' };
   if (c.keyHeader && c.keyValue) headers[c.keyHeader] = c.keyValue;
-  const body = JSON.stringify({ device, status, ts: new Date().toISOString() });
+  const normalizedDevice = String(device || 'UI').toLowerCase();
+  const normalizedStatus = String(status || '').toLowerCase();
+  const body = JSON.stringify({ device: normalizedDevice, status: normalizedStatus, ts: new Date().toISOString() });
   trackFunctionCall();
   const r = await fetch(c.presUrl, { method: 'POST', headers, body });
   return { status: r.status, text: await r.text() };

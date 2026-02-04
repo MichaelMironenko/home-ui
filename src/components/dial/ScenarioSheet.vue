@@ -16,7 +16,7 @@ const props = defineProps({
     },
     maxWidth: {
         type: String,
-        default: '560px'
+        default: '600px'
     },
     applyLabel: {
         type: String,
@@ -36,15 +36,8 @@ const emit = defineEmits(['close', 'apply'])
 </script>
 
 <template>
-    <BottomSheet
-        :open="open"
-        :title="title"
-        :max-height="maxHeight"
-        :max-width="maxWidth"
-        :z-index="zIndex"
-        :close-label="closeLabel"
-        @close="emit('close')"
-    >
+    <BottomSheet :open="open" :title="title" :max-height="maxHeight" :max-width="maxWidth" :z-index="zIndex"
+        :close-label="closeLabel" @close="emit('close')">
         <template #actions>
             <button type="button" class="stop-state-apply" @click="emit('apply')">
                 {{ applyLabel }}

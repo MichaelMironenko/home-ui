@@ -16,7 +16,7 @@ const props = defineProps({
     },
     maxWidth: {
         type: String,
-        default: '560px'
+        default: '600px'
     },
     maxHeight: {
         type: String,
